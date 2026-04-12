@@ -26,59 +26,15 @@ This project bridges two worlds: the pscale world where structure IS the program
 
 ---
 
-## TWO TRACKS — READ THIS FIRST
-
-This repo contains two parallel, independent systems sharing the same handler code. They are NOT branches of each other. They do NOT merge. If you are working on one track, do NOT touch the other.
-
-### Track A — Traditional MCP (production)
-
-The hardcoded MCP server. Tool registrations in TypeScript. This is the production system. The tiered roadmap (recall, compaction, Tier 1 tools, etc.) happens here.
-
-- **Entry point**: `src/index.ts` → `src/server.ts`
-- **Deployment**: Railway auto-deploys from main
-- **URL**: `https://pscale-mcp-server-production.up.railway.app/mcp`
-- **DO NOT modify `src/index.ts` or `src/server.ts` for reef purposes**
-
-### Track B — Reef Kernel (experimental)
-
-The reef-driven server. Tool definitions come from `mcp-reef.json`, a pscale block. A thin kernel reads the reef and registers tools dynamically. This is the experimental path — self-describing, forkable server definitions.
-
-- **Entry point**: `src/index-reef.ts` → `src/kernel.ts`
-- **Deployment**: Separate Railway service, same repo, different start command
-- **URL**: `https://reef.hermitcrab.me` (reef at `/reef`, MCP at `/mcp`)
-- **DO NOT modify Track A files for reef purposes. DO NOT modify `src/index.ts`.**
-
-### Shared code (both tracks use)
-
-- `src/bsp.ts` — BSP walker (DO NOT MODIFY, reference copy)
-- `src/db.ts` — Supabase client
-- `src/tools/block-ops.ts` — handler functions (exported as named functions)
-- `src/tools/memory-ops.ts` — handler functions
-- `src/tools/identity-ops.ts` — handler functions
-- `src/tools/discovery-ops.ts` — handler functions
-- `src/resources/starstone.ts` — starstone resource
-
-### Track B only
-
-- `mcp-reef.json` — the reef (source of truth for Track B)
-- `src/kernel.ts` — reads reef, converts schemas, registers tools
-- `src/schema-converter.ts` — reef pscale schema → Zod
-- `src/tools/handler-map.ts` — dispatch map + adapters
-- `src/index-reef.ts` — Track B HTTP entry point
-
-When modifying shared handler code (src/tools/*.ts), keep the exported handler functions compatible with both tracks. The `registerX()` functions in each file are Track A's registration path. The kernel uses the exported handler functions directly.
-
----
-
 ## What this is
 
-An MCP server giving any LLM agent structured memory and cooperative discovery via pscale blocks. 13 tools + 2 resources. Streamable HTTP transport. Supabase storage.
+The production pscale MCP server. 13 tools + 2 resources. Streamable HTTP transport. Supabase storage. Gives any LLM agent structured memory and cooperative discovery via pscale blocks.
 
 **Repo**: https://github.com/pscale-commons/pscale-mcp-server
-**Track A (production)**: `https://pscale-mcp-server-production.up.railway.app/mcp`
-**Track B (reef)**: `https://reef.hermitcrab.me` — reef at `/reef`, MCP at `/mcp`
+**URL**: `https://pscale-mcp-server-production.up.railway.app/mcp`
+**Reef (separate repo)**: https://github.com/happyseaurchin/pscale-reef — the experimental reef-driven server was split into its own repo on 12 April 2026.
 
-Track A connect config:
+Connect config:
 ```json
 {
   "pscale": {
@@ -94,36 +50,29 @@ Track A connect config:
 src/
   bsp.ts              — BSP walker (bsp2-star port, DO NOT MODIFY)
   db.ts               — Supabase client (thin wrapper, exports getClient)
-  server.ts           — Track A: MCP server factory, hardcoded tool registration
-  kernel.ts           — Track B: reads mcp-reef.json, registers tools dynamically
-  schema-converter.ts — Track B: reef pscale schema → Zod
-  index.ts            — Track A entry point (DO NOT MODIFY for reef work)
-  index-reef.ts       — Track B entry point (GET /reef + POST /mcp)
+  server.ts           — MCP server factory, tool registration
+  index.ts            — Entry point (DO NOT MODIFY casually)
   starstone.json      — Starstone v3 (complete pscale spec, MCP resource)
-  invite.json         — On-ramp block (star-linked action steps, MCP tool)
-  roadmap.json        — High-trust network evolution (MCP resource)
+  invite.json         — Relational progression guide (4 levels, MCP tool)
+  evolution.json      — High-trust network evolution (MCP resource)
   tools/
-    block-ops.ts      — create_block, write, walk (handlers shared by both tracks)
+    block-ops.ts      — create_block, write, walk
     memory-ops.ts     — remember, recall, concern
     identity-ops.ts   — passport_publish, passport_read
     discovery-ops.ts  — beach_mark, beach_read, inbox_send, inbox_check
-    invite-ops.ts     — pscale_invite (on-ramp tool)
-    handler-map.ts    — Track B: dispatch map + adapters
+    invite-ops.ts     — pscale_invite
   resources/
     starstone.ts      — Serves starstone as MCP resource
-    roadmap.ts        — Serves high-trust-network as MCP resource
+    roadmap.ts        — Serves evolution as pscale://high-trust-network resource
 api/
   mcp.ts              — Vercel serverless entry (broken for sessions, left as reference)
-mcp-reef.json         — Track B: the reef block (server definition as pscale data)
 ```
 
 ## Deployment
 
-- **Track A — Railway** (production): `https://pscale-mcp-server-production.up.railway.app/mcp` — entry point `src/index.ts`. Persistent Node.js process, real sessions, auto-deploys from main. This is what agents connect to.
-- **Track B — Railway** (reef): `https://reef.hermitcrab.me` — entry point `src/index-reef.ts`. Separate Railway service, same repo. Start command: `npx tsx src/index-reef.ts`.
+- **Railway** (production): `https://pscale-mcp-server-production.up.railway.app/mcp` — entry point `src/index.ts`. Persistent Node.js process, real sessions, auto-deploys from main.
 - **Vercel** (broken for sessions): `api/mcp.ts` handles init but MCP's session protocol is incompatible with serverless. Left in the repo but not the recommended deployment.
-- **Standalone Track A**: `SUPABASE_ANON_KEY=... npx tsx src/index.ts`
-- **Standalone Track B**: `SUPABASE_ANON_KEY=... npx tsx src/index-reef.ts`
+- **Standalone**: `SUPABASE_ANON_KEY=... npx tsx src/index.ts`
 
 ## BSP walker
 
@@ -173,7 +122,7 @@ All open-beta RLS. Env: `SUPABASE_ANON_KEY` = `sb_publishable_rjE-rjL8kPCkXDK1Zc
 - `content` param in `pscale_inbox_send` is `z.string()` (workaround for zod serialisation crash with `z.record(z.any())`). Handler JSON-parses if possible.
 - `block_type` column exists in DB set to `'general'`. Not exposed to agents. Drop if never used.
 - Vercel `api/mcp.ts` is broken for sessions. Left in repo as reference but Railway is the deployment target. A diagnostic `x-debug: ping` header is still in the code — remove it.
-- The roadmap has shifted from tier gates to evolution framing. All tools available from the start. What evolves is the use case — each evolution generates the question that reveals the next. See `src/roadmap.json` for the current framing. The reference docs on David's local disk are `xstream-onen-systemic-evolution.md` and `relational-engagement-architecture.md` (in ~/Downloads).
+- The evolution framing (5 levels in `src/evolution.json`, served as `pscale://high-trust-network`) now includes relational transitions between each evolution — Signal, Grain, Live Channel, Open Context. `pscale_invite` (backed by `src/invite.json`) is the operational guide to these relational steps. The reference doc is `~/Downloads/relational-engagement-architecture.md`.
 
 ## The 12 April 2026 session — what happened
 
@@ -187,9 +136,35 @@ All open-beta RLS. Env: `SUPABASE_ANON_KEY` = `sb_publishable_rjE-rjL8kPCkXDK1Zc
 
 **Railway reconnection**: The repo moved from `happyseaurchin/pscale-mcp-server` to `pscale-commons/pscale-mcp-server`. Railway lost its GitHub connection (showed "GitHub Repo not found"). Reconnected to the new org.
 
+## The 12 April 2026 session (second) — relational progression restructure
+
+**Problem**: Agents complete the invite on-ramp and then don't know what to do relationally. Real example: an agent found 3 marks on a beach and just listed them — no guidance on next steps. The invite covered bootstrap only (5 steps ending at "beyond"), the evolution doc described levels abstractly. Neither gave operational guidance for the full relational progression.
+
+**invite.json rewrite — 4 relational levels**: Replaced the 5-step bootstrap with 4 top-level digits matching the relational engagement architecture:
+- **Level 1 — Signal**: Passport, memory, beach mark at hermitcrab.me (canonical first beach), beach read with explicit bridge to Level 2
+- **Level 2 — Grain**: Read passport (assess resonance), send grain probe, check inbox, the grain act (exchange blocks → synthesise independently → compare → the gap IS the grain)
+- **Level 3 — Live Channel (Synapse)**: Structurally described, partially supported by existing tools
+- **Level 4 — Open Context (MAGI)**: Vision only — requires full ecology as substrate
+
+Each has sub-steps (1.1-1.4, 2.1-2.4, etc.) with hidden directory convention (_.1 = tool name, _.2 = next step). Cross-level pointers: 1.4 → 2.1, 2.4 → 3.
+
+**invite-ops.ts**: Handler now supports decimals (step=1.3, step=2.2). Integer step shows level overview with sub-step summaries. Decimal shows specific sub-step. No args shows full 4-level trajectory.
+
+**evolution.json** (renamed from roadmap.json): Evolution framing PRESERVED. Added relational transitions as new digit (5 or 6) within each evolution — the specific relational act that answers the question and opens the next level. Points to pscale_invite for operational steps. Renamed file to eliminate "roadmap" confusion; resource URI `pscale://high-trust-network` unchanged. Import in `src/resources/roadmap.ts` updated.
+
+**mcp-reef.json**: Updated invite tool definition (4 levels, decimal steps). Section 4 restored to evolution framing with relational transitions added. Resource description updated.
+
+**Mistake and correction**: Initially rewrote evolution.json wholesale, replacing the evolution framing with a flat 4-level relational structure. This was wrong — the evolutions are stable states, the relational steps are transitions between them. They're complementary. Restored from git and added transitions properly.
+
+**Key design decisions**:
+- hermitcrab.me in invite text, not code — changing the canonical beach is a JSON edit
+- Levels 3-4 are honest about what exists vs what's coming
+- The grain act (2.4) is a relational instruction using existing tools, not a new tool
+- No new tools added — 13 tools remain sufficient through Level 2
+
 ## Next priorities
 
-- **Grain synthesis handler**: The hinge test — two agents exchange blocks, synthesise independently, compare. The inbox currently carries text; it needs to carry block references and facilitate the exchange-synthesise-compare cycle. This is Evolution 1's key mechanism.
+- **The hinge test**: Two agents actually perform the grain act (Level 2.4). Does the comparison of independent syntheses produce novel information? This is empirical.
 - **Passport expansion**: Add positions 4-7 for grain history, routing stats, recommendation surface. Empty now, structurally ready.
 - **Content-relative trust**: SQ should be per-content-type, not per-entity. "Agent X sends me content I score high for THIS type of need."
 - `pscale_recall` level↔depth mapping still off.

@@ -1,5 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import roadmap from '../roadmap.json' with { type: 'json' };
+import evolution from '../evolution.json' with { type: 'json' };
 
 export function registerRoadmap(server: McpServer) {
   server.resource(
@@ -7,14 +7,14 @@ export function registerRoadmap(server: McpServer) {
     'pscale://high-trust-network',
     {
       description:
-        'Turn the internet into a beach — a high-trust agent-to-agent network targeting seven degrees of convergence. This roadmap describes what exists now (Tier 0), what emerges at density (trust, routing, self-organisation), and the gates between tiers. The protocol validates the protocol.',
+        'The systemic evolution of the high-trust agent network. Five evolutionary levels (structured cognition → trust ecology → convergence → identity → MAGI) with the relational transitions between them. Each evolution generates the question that reveals the next. Call pscale_invite for the operational guide — what to do at each step.',
       mimeType: 'application/json',
     },
     async (uri) => ({
       contents: [
         {
           uri: uri.toString(),
-          text: JSON.stringify(roadmap, null, 2),
+          text: JSON.stringify(evolution, null, 2),
           mimeType: 'application/json',
         },
       ],
