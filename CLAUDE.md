@@ -72,7 +72,7 @@ When modifying shared handler code (src/tools/*.ts), keep the exported handler f
 
 ## What this is
 
-An MCP server giving any LLM agent structured memory and cooperative discovery via pscale blocks. 12 tools + 1 resource. Streamable HTTP transport. Supabase storage.
+An MCP server giving any LLM agent structured memory and cooperative discovery via pscale blocks. 13 tools + 2 resources. Streamable HTTP transport. Supabase storage.
 
 **Repo**: https://github.com/pscale-commons/pscale-mcp-server
 **Track A (production)**: `https://pscale-mcp-server-production.up.railway.app/mcp`
@@ -99,16 +99,19 @@ src/
   schema-converter.ts — Track B: reef pscale schema → Zod
   index.ts            — Track A entry point (DO NOT MODIFY for reef work)
   index-reef.ts       — Track B entry point (GET /reef + POST /mcp)
-  starstone.json      — Lean starstone block (MCP resource)
-  starstone-full.json — Full starstone (reference)
+  starstone.json      — Starstone v3 (complete pscale spec, MCP resource)
+  invite.json         — On-ramp block (star-linked action steps, MCP tool)
+  roadmap.json        — High-trust network evolution (MCP resource)
   tools/
     block-ops.ts      — create_block, write, walk (handlers shared by both tracks)
     memory-ops.ts     — remember, recall, concern
     identity-ops.ts   — passport_publish, passport_read
     discovery-ops.ts  — beach_mark, beach_read, inbox_send, inbox_check
+    invite-ops.ts     — pscale_invite (on-ramp tool)
     handler-map.ts    — Track B: dispatch map + adapters
   resources/
     starstone.ts      — Serves starstone as MCP resource
+    roadmap.ts        — Serves high-trust-network as MCP resource
 api/
   mcp.ts              — Vercel serverless entry (broken for sessions, left as reference)
 mcp-reef.json         — Track B: the reef block (server definition as pscale data)
@@ -148,7 +151,7 @@ All open-beta RLS. Env: `SUPABASE_ANON_KEY` = `sb_publishable_rjE-rjL8kPCkXDK1Zc
 2. **Do not add fields to blocks.** Position in the tree encodes what you think you need a field for.
 3. **Do not add logic to handle block semantics.** Tool handlers are thin: load block → BSP call → format → return. If a handler is complex, the block structure is wrong.
 4. **Do not build systems.** No reverse indices, no caching layers, no routing tables. The tree walks.
-5. **Do not grow the server.** 12 tools. Before adding a 13th, ask whether an existing tool with a different block structure solves the problem.
+5. **Do not grow the server carelessly.** 13 tools. Before adding a 14th, ask whether an existing tool with a different block structure solves the problem.
 
 ## The 10 April 2026 session — what happened
 
@@ -170,8 +173,28 @@ All open-beta RLS. Env: `SUPABASE_ANON_KEY` = `sb_publishable_rjE-rjL8kPCkXDK1Zc
 - `content` param in `pscale_inbox_send` is `z.string()` (workaround for zod serialisation crash with `z.record(z.any())`). Handler JSON-parses if possible.
 - `block_type` column exists in DB set to `'general'`. Not exposed to agents. Drop if never used.
 - Vercel `api/mcp.ts` is broken for sessions. Left in repo as reference but Railway is the deployment target. A diagnostic `x-debug: ping` header is still in the code — remove it.
-- The tiered roadmap at `/Users/davidpinto/Downloads/pscale-mcp-tiered-roadmap.md` describes the path forward: Tier 0 (current tools), Tier 1 (SQ-gated beach), Tier 2 (MAGI coordination), Tier 3 (hermitcrab self-assembly from recipes using Tier 0 tools, no new code).
+- The roadmap has shifted from tier gates to evolution framing. All tools available from the start. What evolves is the use case — each evolution generates the question that reveals the next. See `src/roadmap.json` for the current framing. The reference docs on David's local disk are `xstream-onen-systemic-evolution.md` and `relational-engagement-architecture.md` (in ~/Downloads).
+
+## The 12 April 2026 session — what happened
+
+**Starstone v3**: Replaced lean starstone v2 with the full v3 from CORSAIR (`pscale-starstone3.json`). 8 branches: format, BSP, implementation, self-reference, version, hidden directories, star operator, block sign.
+
+**pscale_invite tool**: 13th tool. Backed by `src/invite.json` — a star-linked operational block (0−) where each step names a tool and points to the next. Four action steps (passport → memory → beach mark → discovery) plus step 5 (the vision). The handler walks the block and formats steps as actionable instructions.
+
+**pscale://high-trust-network resource**: Evolution-framed roadmap served as MCP resource. Describes five evolutions (structured cognition → trust ecology → convergence → identity → MAGI) with the question chain driving progression. No gates — all tools always available.
+
+**Evolution framing**: The original tiered roadmap used gate queries (SQL checks against live tables) to control tool visibility. This was replaced with the evolution framing: capabilities don't unlock, they activate when the ecology has lived through the previous question. The relational engagement architecture doc (`~/Downloads/relational-engagement-architecture.md`) specifies the transitions as concrete relational acts: Signal → Grain → Live Channel → Evaluative Routing → Direct Context Sharing.
+
+**Railway reconnection**: The repo moved from `happyseaurchin/pscale-mcp-server` to `pscale-commons/pscale-mcp-server`. Railway lost its GitHub connection (showed "GitHub Repo not found"). Reconnected to the new org.
+
+## Next priorities
+
+- **Grain synthesis handler**: The hinge test — two agents exchange blocks, synthesise independently, compare. The inbox currently carries text; it needs to carry block references and facilitate the exchange-synthesise-compare cycle. This is Evolution 1's key mechanism.
+- **Passport expansion**: Add positions 4-7 for grain history, routing stats, recommendation surface. Empty now, structurally ready.
+- **Content-relative trust**: SQ should be per-content-type, not per-entity. "Agent X sends me content I score high for THIS type of need."
+- `pscale_recall` level↔depth mapping still off.
+- Compaction in `pscale_remember` is still concatenation (needs LLM summarisation).
 
 ## The spec
 
-The original spec is at `/Users/davidpinto/Downloads/pscale-mcp-server-spec.md`. Written by a Claude chat session working at a distance from the code, then implemented here. The spec describes 13 tools; we built 12 (merged read into walk).
+The original spec is at `/Users/davidpinto/Downloads/pscale-mcp-server-spec.md`. Written by a Claude chat session working at a distance from the code, then implemented here. The spec described 13 tools; we built 13 (merged read into walk, added invite).
