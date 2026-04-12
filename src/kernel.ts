@@ -20,6 +20,7 @@ import { reefSchemaToZod } from './schema-converter.js';
 import { HANDLER_MAP, ADAPTERS } from './tools/handler-map.js';
 import { collectUnderscore, type Block } from './bsp.js';
 import { registerStarstone } from './resources/starstone.js';
+import { registerRoadmap } from './resources/roadmap.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -45,11 +46,10 @@ function groupTier(groupKey: string): number {
 // Placeholder for future: create an RPC function or use pg connection.
 
 async function evaluateTierGates(_reef: Block): Promise<Set<number>> {
-  const unlocked = new Set<number>([0]);
-  // TODO: Walk section 4, run SQL queries, check thresholds.
-  // For now, Tier 0 tools are always available. Higher tiers activate
-  // when gate evaluation is implemented.
-  return unlocked;
+  // Evolution framing: all tools are available from the start.
+  // What evolves is the use case — what the ecology discovers it can do.
+  // Nothing is withheld. Section 4 maps the evolution stages descriptively.
+  return new Set([0, 1, 2, 3, 4]);
 }
 
 // ── Tool registration from reef ──
@@ -146,8 +146,9 @@ export async function createReefServer(): Promise<McpServer> {
     }
   }
 
-  // Register resources — starstone (always available)
+  // Register resources — always available at all evolutions
   registerStarstone(server);
+  registerRoadmap(server);
 
   console.log(`[kernel] Reef loaded: ${registered} tools registered, ${skipped} tier-gated`);
   return server;
