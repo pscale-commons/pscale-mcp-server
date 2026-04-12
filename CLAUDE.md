@@ -28,7 +28,7 @@ This project bridges two worlds: the pscale world where structure IS the program
 
 ## What this is
 
-The production pscale MCP server. 13 tools + 2 resources. Streamable HTTP transport. Supabase storage. Gives any LLM agent structured memory and cooperative discovery via pscale blocks.
+The production pscale MCP server. 14 tools + 2 resources. Streamable HTTP transport. Supabase storage. Gives any LLM agent structured memory and cooperative discovery via pscale blocks.
 
 **Repo**: https://github.com/pscale-commons/pscale-mcp-server
 **URL**: `https://pscale-mcp-server-production.up.railway.app/mcp`
@@ -60,7 +60,8 @@ src/
     memory-ops.ts     — remember, recall, concern
     identity-ops.ts   — passport_publish, passport_read
     discovery-ops.ts  — beach_mark, beach_read, inbox_send, inbox_check
-    invite-ops.ts     — pscale_invite
+    invite-ops.ts     — pscale_invite (context-aware: queries live network state)
+    network-ops.ts    — pscale_network (live grain network view + content routing)
   resources/
     starstone.ts      — Serves starstone as MCP resource
     roadmap.ts        — Serves evolution as pscale://high-trust-network resource
@@ -100,7 +101,7 @@ All open-beta RLS. Env: `SUPABASE_ANON_KEY` = `sb_publishable_rjE-rjL8kPCkXDK1Zc
 2. **Do not add fields to blocks.** Position in the tree encodes what you think you need a field for.
 3. **Do not add logic to handle block semantics.** Tool handlers are thin: load block → BSP call → format → return. If a handler is complex, the block structure is wrong.
 4. **Do not build systems.** No reverse indices, no caching layers, no routing tables. The tree walks.
-5. **Do not grow the server carelessly.** 13 tools. Before adding a 14th, ask whether an existing tool with a different block structure solves the problem.
+5. **Do not grow the server carelessly.** 14 tools. Before adding a 15th, ask whether an existing tool with a different block structure solves the problem.
 
 ## The 10 April 2026 session — what happened
 
@@ -162,14 +163,43 @@ Each has sub-steps (1.1-1.4, 2.1-2.4, etc.) with hidden directory convention (_.
 - The grain act (2.4) is a relational instruction using existing tools, not a new tool
 - No new tools added — 13 tools remain sufficient through Level 2
 
+## The 13 April 2026 session — context-aware invite + network tool
+
+**Problem**: Agents connecting to the MCP don't know where they are in the relational progression. Real example: a user's agent found 3 marks on a beach but had to be nudged to check the right URL, then listed marks without knowing what to do next. The invite described the trajectory but didn't navigate agents through it.
+
+**Context-aware pscale_invite**: Added optional `agent_id` parameter. When provided, the handler queries Supabase in parallel: beach state at hermitcrab.me (always shown, even without agent_id), passport status, beach marks, inbox messages, grain blocks. Returns personalized "you are here" + specific next relational act with exact tool calls. State machine: no passport → publish; passport but no mark → mark hermitcrab.me; marked + others at beach → read their passports, send grain probe; unread messages → check inbox; grain blocks → maintain channels.
+
+**pscale_network (14th tool)**: The social neuron. NOT a new block or fixed topology — a live query across existing data (grain blocks, inbox history, beach marks) that composes a view of the agent's relational state. Shows active grains (completed trust engagements), emerging relationships (inbox exchange, no grain block yet), and beach presence. Route action evaluates grain channels and recommends where to send content. The network is contingent — ordered by activity, not fixed positions. Grain relationships that carry signal have prominence; those that don't fade.
+
+**owner_id → agent_id rename**: All 14 tools now use `agent_id` as the external parameter name. The DB column stays `owner_id` in pscale_blocks (internal plumbing) but agents always see `agent_id`. This aligns with the relational framing — these are agents in a network, not owners of data.
+
+**Server instructions updated**: First thing an agent sees now points to `pscale_invite` with agent_id for personalized guidance and mentions `pscale_network` for the trust grid.
+
+**Architectural decisions**:
+- The network tool reads existing data, creates no new storage. The internet is the shared space — no need for a shared network block.
+- Addresses in the network are contingent on trust and activity, not fixed. This is not a graph to be crawled — it's a live process.
+- Supabase is the bootstrap relay, not the final architecture. The concepts (beach as URL coordinate, grain as trust engagement, routing through live channels) are peer-to-peer. The relay solved the unsolved problem from SAND §0.5: how to be in the processing path of agents visiting arbitrary sites. A table keyed by sha256(canonical_url) stores marks externally. No site cooperation needed. The URL is the coordinate.
+- hermitcrab.me is the canonical first beach, hardcoded in the invite handler as `CANONICAL_BEACH` constant — changing it is a one-line edit.
+
+**Files changed**:
+- `src/tools/invite-ops.ts` — context-aware handler with Supabase queries, state detection, personalized guidance
+- `src/tools/network-ops.ts` — NEW: 14th tool, live grain network view + content routing
+- `src/tools/block-ops.ts` — owner_id → agent_id
+- `src/tools/memory-ops.ts` — owner_id → agent_id
+- `src/tools/identity-ops.ts` — owner_id → agent_id
+- `src/tools/discovery-ops.ts` — owner_id → agent_id
+- `src/server.ts` — register network-ops, updated instructions
+
 ## Next priorities
 
-- **The hinge test**: Two agents actually perform the grain act (Level 2.4). Does the comparison of independent syntheses produce novel information? This is empirical.
+- **The hinge test**: Two agents actually perform the grain act (Level 2.4). Does the comparison of independent syntheses produce novel information? This is empirical. The network tool now shows "emerging" relationships (inbox exchange) and guides toward crystallization.
+- **Content-relative scoring**: When content flows through grain channels, agents need to score relevance. Currently cognitive only — no field to record scores. Could be a position in the grain block (address 3 = routing log with scores).
+- **Social neuron reinforcement**: When routing succeeds (need satisfied), the entire chain should be reinforced. The mechanism is designed (see relational-engagement-architecture.md) but not coded.
 - **Passport expansion**: Add positions 4-7 for grain history, routing stats, recommendation surface. Empty now, structurally ready.
-- **Content-relative trust**: SQ should be per-content-type, not per-entity. "Agent X sends me content I score high for THIS type of need."
 - `pscale_recall` level↔depth mapping still off.
 - Compaction in `pscale_remember` is still concatenation (needs LLM summarisation).
+- The relay (Supabase) is bootstrap infrastructure. Long-term: agents carry own blocks, grain synapses are direct, beach marks could live at URLs themselves (`.well-known/pscale-beach`). Architecture for when density demands it.
 
 ## The spec
 
-The original spec is at `/Users/davidpinto/Downloads/pscale-mcp-server-spec.md`. Written by a Claude chat session working at a distance from the code, then implemented here. The spec described 13 tools; we built 13 (merged read into walk, added invite).
+The original spec is at `/Users/davidpinto/Downloads/pscale-mcp-server-spec.md`. Written by a Claude chat session working at a distance from the code, then implemented here. The spec described 13 tools; we built 14 (merged read into walk, added invite, added network).

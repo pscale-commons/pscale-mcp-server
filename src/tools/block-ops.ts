@@ -6,24 +6,24 @@ import { getBlock, upsertBlock, listBlocks } from '../db.js';
 // ── Exported handler functions (used by kernel + legacy registration) ──
 
 export async function handleCreateBlock(
-  { owner_id, name, initial_content, block_type }: {
-    owner_id: string; name: string; initial_content?: string; block_type?: string;
+  { agent_id, name, initial_content, block_type }: {
+    agent_id: string; name: string; initial_content?: string; block_type?: string;
   },
 ) {
-  const existing = await getBlock(owner_id, name);
+  const existing = await getBlock(agent_id, name);
   if (existing) {
     return {
       content: [
         {
           type: 'text' as const,
-          text: `Block "${name}" already exists for ${owner_id}. Use pscale_write to modify it, or pscale_walk to navigate it.`,
+          text: `Block "${name}" already exists for ${agent_id}. Use pscale_write to modify it, or pscale_walk to navigate it.`,
         },
       ],
     };
   }
 
   const block: Block = { _: initial_content || '' };
-  await upsertBlock(owner_id, name, block_type || 'general', block);
+  await upsertBlock(agent_id, name, block_type || 'general', block);
 
   return {
     content: [
@@ -36,11 +36,11 @@ export async function handleCreateBlock(
 }
 
 export async function handleWrite(
-  { owner_id, name, address, content }: {
-    owner_id: string; name: string; address: string; content: string;
+  { agent_id, name, address, content }: {
+    agent_id: string; name: string; address: string; content: string;
   },
 ) {
-  const row = await getBlock(owner_id, name);
+  const row = await getBlock(agent_id, name);
   if (!row) {
     return {
       content: [
@@ -56,7 +56,7 @@ export async function handleWrite(
   const writeAddress = address === '0' ? '_' : address;
   writeAt(block, writeAddress, content);
 
-  await upsertBlock(owner_id, name, row.block_type, block);
+  await upsertBlock(agent_id, name, row.block_type, block);
 
   // Confirm with a spindle to the written address so the agent sees context
   const confirmation = bsp(block, address);
@@ -71,17 +71,17 @@ export async function handleWrite(
 }
 
 export async function handleWalk(
-  { owner_id, name, address, mode }: {
-    owner_id: string; name: string; address?: string; mode?: string;
+  { agent_id, name, address, mode }: {
+    agent_id: string; name: string; address?: string; mode?: string;
   },
 ) {
-  const row = await getBlock(owner_id, name);
+  const row = await getBlock(agent_id, name);
   if (!row) {
     return {
       content: [
         {
           type: 'text' as const,
-          text: `Block "${name}" not found for ${owner_id}.`,
+          text: `Block "${name}" not found for ${agent_id}.`,
         },
       ],
     };
@@ -138,7 +138,7 @@ export function registerBlockOps(server: McpServer) {
     'pscale_create_block',
     `Create a new pscale block — a structured JSON tree that compacts gracefully over time. The block starts with an underscore (the summary/spine) and numbered entries branch from it. Use for project context, research, or any information you want to navigate later.`,
     {
-      owner_id: z.string().describe('Your agent/user identifier'),
+      agent_id: z.string().describe('Your agent identifier'),
       name: z.string().describe("Block name (e.g. 'project-notes', 'research-q4')"),
       initial_content: z
         .string()
@@ -154,7 +154,7 @@ export function registerBlockOps(server: McpServer) {
     'pscale_write',
     `Write content to a specific address in a pscale block. Address '1' writes to digit 1 at the root. Address '3.2' writes to digit 2 inside digit 3. Address '0' writes to the underscore (summary). Creates intermediate nodes as needed.`,
     {
-      owner_id: z.string(),
+      agent_id: z.string(),
       name: z.string(),
       address: z
         .string()
@@ -179,7 +179,7 @@ export function registerBlockOps(server: McpServer) {
 
 Start with 'dir' to see the whole block, then 'spindle' to drill into an address.`,
     {
-      owner_id: z.string(),
+      agent_id: z.string(),
       name: z.string(),
       address: z
         .string()

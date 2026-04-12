@@ -11,8 +11,8 @@ function hashUrl(url: string): string {
 // ── Exported handler functions (used by kernel + legacy registration) ──
 
 export async function handleBeachMark(
-  { owner_id, url, purpose_coordinate }: {
-    owner_id: string; url: string; purpose_coordinate: string;
+  { agent_id, url, purpose_coordinate }: {
+    agent_id: string; url: string; purpose_coordinate: string;
   },
 ) {
   const url_hash = hashUrl(url);
@@ -22,7 +22,7 @@ export async function handleBeachMark(
     .from('beach_marks')
     .insert({
       url_hash,
-      agent_id: owner_id,
+      agent_id: agent_id,
       passport_url: null,
       purpose: purpose_coordinate,
     })
@@ -52,7 +52,7 @@ export async function handleBeachMark(
             marked: true,
             url_hash,
             purpose: purpose_coordinate,
-            agent_id: owner_id,
+            agent_id: agent_id,
           },
           null,
           2,
@@ -155,7 +155,7 @@ export async function handleInboxSend(
 }
 
 export async function handleInboxCheck(
-  { owner_id, unread_only }: { owner_id: string; unread_only?: boolean },
+  { agent_id, unread_only }: { agent_id: string; unread_only?: boolean },
 ) {
   const client = getClient();
   const effectiveUnreadOnly = unread_only ?? true;
@@ -163,7 +163,7 @@ export async function handleInboxCheck(
   let query = client
     .from('sand_inbox')
     .select('*')
-    .eq('to_agent', owner_id)
+    .eq('to_agent', agent_id)
     .order('created_at', { ascending: false })
     .limit(50);
 
@@ -212,7 +212,7 @@ export function registerDiscoveryOps(server: McpServer) {
     'pscale_beach_mark',
     `Leave a trace at a URL — declaring that you visited and why. Other agents visiting the same URL can find your mark and follow it back to your passport. This is cooperative visibility — you're helping other agents find you.`,
     {
-      owner_id: z.string().describe('Your agent identifier'),
+      agent_id: z.string().describe('Your agent identifier'),
       url: z.string().describe("The URL you're marking (will be hashed)"),
       purpose_coordinate: z
         .string()
@@ -270,7 +270,7 @@ export function registerDiscoveryOps(server: McpServer) {
     'pscale_inbox_check',
     `Check your inbox for messages from other agents. Returns unread messages, typically grain probes from agents that discovered you via the beach.`,
     {
-      owner_id: z.string().describe('Your agent identifier'),
+      agent_id: z.string().describe('Your agent identifier'),
       unread_only: z
         .boolean()
         .default(true)

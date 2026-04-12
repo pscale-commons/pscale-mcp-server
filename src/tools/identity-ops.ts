@@ -6,8 +6,8 @@ import { getClient, upsertBlock } from '../db.js';
 // ── Exported handler functions (used by kernel + legacy registration) ──
 
 export async function handlePassportPublish(
-  { owner_id, description, offers, needs, lineage }: {
-    owner_id: string; description: string; offers?: string; needs?: string; lineage?: string;
+  { agent_id, description, offers, needs, lineage }: {
+    agent_id: string; description: string; offers?: string; needs?: string; lineage?: string;
   },
 ) {
   // The passport is a pscale block. Structure encodes meaning.
@@ -21,7 +21,7 @@ export async function handlePassportPublish(
   if (lineage) block['3'] = lineage;
 
   // Save as a block (navigable by BSP)
-  await upsertBlock(owner_id, 'passport', 'general', block);
+  await upsertBlock(agent_id, 'passport', 'general', block);
 
   // Also publish to sand_passports for cross-agent discovery
   const client = getClient();
@@ -29,7 +29,7 @@ export async function handlePassportPublish(
     .from('sand_passports')
     .upsert(
       {
-        id: owner_id,
+        id: agent_id,
         passport: block,
         updated_at: new Date().toISOString(),
       },
@@ -41,7 +41,7 @@ export async function handlePassportPublish(
       {
         type: 'text' as const,
         text: JSON.stringify(
-          { published: true, agent_id: owner_id, passport: block },
+          { published: true, agent_id: agent_id, passport: block },
           null,
           2,
         ),
@@ -92,7 +92,7 @@ export function registerIdentityOps(server: McpServer) {
     'pscale_passport_publish',
     `Publish your identity as a passport — a pscale block declaring who you are, what you can do, and what you're looking for. Other agents read your passport to assess whether to engage. The passport IS a block: underscore carries your description, digit 1 holds what you offer, digit 2 holds what you need. Navigate it with BSP like any other block.`,
     {
-      owner_id: z.string().describe('Your agent identifier'),
+      agent_id: z.string().describe('Your agent identifier'),
       description: z
         .string()
         .describe('Who you are and what you do — becomes the block underscore'),

@@ -91,11 +91,11 @@ function compactIfFull(block: Block, path: string[]): void {
 // ── Exported handler functions (used by kernel + legacy registration) ──
 
 export async function handleRemember(
-  { owner_id, content, category }: {
-    owner_id: string; content: string; category?: string;
+  { agent_id, content, category }: {
+    agent_id: string; content: string; category?: string;
   },
 ) {
-  const { block, isNew } = await getOrCreateHistory(owner_id);
+  const { block, isNew } = await getOrCreateHistory(agent_id);
 
   const timestamp = new Date().toISOString();
   const entry = category
@@ -122,7 +122,7 @@ export async function handleRemember(
     }
   }
 
-  await upsertBlock(owner_id, 'history', 'history', block);
+  await upsertBlock(agent_id, 'history', 'history', block);
 
   return {
     content: [
@@ -139,11 +139,11 @@ export async function handleRemember(
 }
 
 export async function handleRecall(
-  { owner_id, level, position, search }: {
-    owner_id: string; level?: number; position?: number; search?: string;
+  { agent_id, level, position, search }: {
+    agent_id: string; level?: number; position?: number; search?: string;
   },
 ) {
-  const row = await getBlock(owner_id, 'history');
+  const row = await getBlock(agent_id, 'history');
   if (!row) {
     return {
       content: [
@@ -216,12 +216,12 @@ export async function handleRecall(
 }
 
 export async function handleConcern(
-  { owner_id, action, purpose, perception, gap }: {
-    owner_id: string; action: string; purpose?: string; perception?: string; gap?: string;
+  { agent_id, action, purpose, perception, gap }: {
+    agent_id: string; action: string; purpose?: string; perception?: string; gap?: string;
   },
 ) {
   if (action === 'read') {
-    const row = await getBlock(owner_id, 'concern');
+    const row = await getBlock(agent_id, 'concern');
     if (!row) {
       return {
         content: [
@@ -253,14 +253,14 @@ export async function handleConcern(
   };
 
   // If there's an existing concern, save its summary as entry 4
-  const existing = await getBlock(owner_id, 'concern');
+  const existing = await getBlock(agent_id, 'concern');
   if (existing) {
     const prev = existing.block as Block;
     const prevSummary = collectUnderscore(prev) || '';
     block['4'] = `Previous: ${prevSummary}`;
   }
 
-  await upsertBlock(owner_id, 'concern', 'concern', block);
+  await upsertBlock(agent_id, 'concern', 'concern', block);
 
   const dir = bsp(block);
   return {
@@ -280,7 +280,7 @@ export function registerMemoryOps(server: McpServer) {
     'pscale_remember',
     `Remember something. Stores it in your history block with automatic pscale compaction — when 9 items accumulate at a level, they compress to a summary at the next level. Your most recent memories are detailed; older ones are progressively summarised. Nothing is deleted. Use for: session events, decisions made, things learned, interactions completed.`,
     {
-      owner_id: z.string(),
+      agent_id: z.string(),
       content: z
         .string()
         .describe(
@@ -300,7 +300,7 @@ export function registerMemoryOps(server: McpServer) {
     'pscale_recall',
     `Recall from memory. Specify how far back and at what resolution. Level 0 = individual memories (recent). Level 1 = summaries of 9 memories each. Level 2 = summaries of summaries (81 memories each). Higher levels = broader, older overviews. Returns a spindle: the summary at your requested level, plus the path of context above it.`,
     {
-      owner_id: z.string(),
+      agent_id: z.string(),
       level: z
         .number()
         .int()
@@ -329,7 +329,7 @@ export function registerMemoryOps(server: McpServer) {
     'pscale_concern',
     `Read or set your current concern — what you're focused on and why. The concern has three parts: purpose (what you're trying to achieve), perception (what you currently observe), and gap (the difference driving your next action). Setting a concern structures your reasoning. Reading it back at the start of a session restores your focus.`,
     {
-      owner_id: z.string(),
+      agent_id: z.string(),
       action: z.enum(['read', 'set']),
       purpose: z
         .string()
