@@ -7,11 +7,29 @@ const PORT = parseInt(process.env.PORT || '3000', 10);
 
 const transports = new Map<string, StreamableHTTPServerTransport>();
 
+/** Create a new session: transport + MCP server, store in map. */
+function createSession(): StreamableHTTPServerTransport {
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: () => randomUUID(),
+    enableJsonResponse: true,
+  });
+
+  transport.onclose = () => {
+    if (transport.sessionId) {
+      transports.delete(transport.sessionId);
+    }
+  };
+
+  const mcpServer = createServer();
+  mcpServer.connect(transport);
+
+  return transport;
+}
+
 const httpServer = createHttpServer(async (req, res) => {
-  // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, mcp-session-id');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, mcp-session-id, Accept');
   res.setHeader('Access-Control-Expose-Headers', 'mcp-session-id');
 
   if (req.method === 'OPTIONS') {
@@ -20,7 +38,6 @@ const httpServer = createHttpServer(async (req, res) => {
     return;
   }
 
-  // Only handle /mcp path
   const url = new URL(req.url || '/', `http://localhost:${PORT}`);
   if (url.pathname !== '/mcp') {
     res.writeHead(404);
@@ -28,7 +45,7 @@ const httpServer = createHttpServer(async (req, res) => {
     return;
   }
 
-  // Parse body for POST requests
+  // Parse body for POST
   let body: unknown = undefined;
   if (req.method === 'POST') {
     const chunks: Buffer[] = [];
@@ -49,52 +66,50 @@ const httpServer = createHttpServer(async (req, res) => {
 
   const sessionId = req.headers['mcp-session-id'] as string | undefined;
 
+  // Existing session — handle directly
   if (sessionId && transports.has(sessionId)) {
-    // Existing session
-    const transport = transports.get(sessionId)!;
+    await transports.get(sessionId)!.handleRequest(req, res, body);
+    return;
+  }
+
+  // POST without session or with unknown session — create new session
+  if (req.method === 'POST') {
+    const transport = createSession();
     await transport.handleRequest(req, res, body);
-  } else if (req.method === 'POST' && !sessionId) {
-    // New session initialization
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => randomUUID(),
-      enableJsonResponse: true,
-    });
-
-    transport.onclose = () => {
-      if (transport.sessionId) {
-        transports.delete(transport.sessionId);
-      }
-    };
-
-    const mcpServer = createServer();
-    await mcpServer.connect(transport);
-    await transport.handleRequest(req, res, body);
-
     if (transport.sessionId) {
       transports.set(transport.sessionId, transport);
     }
-  } else if (req.method === 'GET') {
-    // SSE connection for existing session or new session
-    if (sessionId && transports.has(sessionId)) {
-      await transports.get(sessionId)!.handleRequest(req, res, body);
-    } else {
-      res.writeHead(400);
-      res.end(JSON.stringify({ error: 'Missing or invalid session ID' }));
+    return;
+  }
+
+  // GET (SSE) with unknown/missing session — create session and handle
+  // mcp-remote opens SSE after init. If the server restarted and lost
+  // the session, we create a fresh one so mcp-remote stays connected.
+  if (req.method === 'GET') {
+    const transport = createSession();
+    // Init the transport so it has a session
+    await transport.handleRequest(req, res, body);
+    if (transport.sessionId) {
+      transports.set(transport.sessionId, transport);
     }
-  } else if (req.method === 'DELETE') {
-    // Session termination
+    return;
+  }
+
+  // DELETE — acknowledge even for unknown sessions
+  if (req.method === 'DELETE') {
     if (sessionId && transports.has(sessionId)) {
       const transport = transports.get(sessionId)!;
       await transport.handleRequest(req, res, body);
       transports.delete(sessionId);
     } else {
-      res.writeHead(404);
-      res.end(JSON.stringify({ error: 'Session not found' }));
+      res.writeHead(200);
+      res.end(JSON.stringify({ jsonrpc: '2.0', result: {} }));
     }
-  } else {
-    res.writeHead(400);
-    res.end(JSON.stringify({ error: 'Bad request' }));
+    return;
   }
+
+  res.writeHead(405);
+  res.end();
 });
 
 httpServer.listen(PORT, () => {
