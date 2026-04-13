@@ -33,41 +33,58 @@ async function getNetworkState(ownerId?: string): Promise<AgentState> {
   const client = getClient();
   const beachHash = hashUrl(CANONICAL_BEACH);
 
-  // Always check canonical beach — try .well-known first (1.9), fall back to relay (0.9)
-  let beachAgents: BeachAgent[] = [];
-  try {
-    const res = await fetch(`${CANONICAL_BEACH}/.well-known/pscale-beach`, {
-      headers: { 'Accept': 'application/json' },
-      signal: AbortSignal.timeout(5000),
-    });
-    if (res.ok) {
-      const data = await res.json() as any;
-      if (data?.marks && Array.isArray(data.marks)) {
-        beachAgents = data.marks.map((m: any) => ({
+  // Always check canonical beach — merge .well-known (1.9) + relay (0.9)
+  const beachAgents: BeachAgent[] = [];
+  const seen = new Set<string>();
+
+  // Query both in parallel
+  const [wellKnownResult, relayResult] = await Promise.all([
+    (async () => {
+      try {
+        const res = await fetch(`${CANONICAL_BEACH}/.well-known/pscale-beach`, {
+          headers: { 'Accept': 'application/json' },
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!res.ok) return [];
+        const data = await res.json() as any;
+        if (!data?.marks || !Array.isArray(data.marks)) return [];
+        return data.marks.map((m: any) => ({
           agent_id: m.agent_id,
           purpose: m.purpose,
           timestamp: m.timestamp,
         }));
+      } catch {
+        return [];
       }
+    })(),
+    (async () => {
+      try {
+        const { data } = await client
+          .from('beach_marks')
+          .select('agent_id, purpose, created_at')
+          .eq('url_hash', beachHash)
+          .order('created_at', { ascending: false })
+          .limit(20);
+        return (data || []).map((m: any) => ({
+          agent_id: m.agent_id,
+          purpose: m.purpose,
+          timestamp: m.created_at,
+        }));
+      } catch {
+        return [];
+      }
+    })(),
+  ]);
+
+  // Merge and deduplicate
+  for (const m of [...wellKnownResult, ...relayResult]) {
+    const key = `${m.agent_id}:${m.purpose}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      beachAgents.push(m);
     }
-  } catch {
-    // .well-known not available — fall back to relay
   }
-
-  if (beachAgents.length === 0) {
-    const { data: beachData } = await client
-      .from('beach_marks')
-      .select('agent_id, purpose, created_at')
-      .eq('url_hash', beachHash)
-      .order('created_at', { ascending: false })
-      .limit(20);
-
-    beachAgents = (beachData || []).map((m: any) => ({
-      agent_id: m.agent_id,
-      purpose: m.purpose,
-      timestamp: m.created_at,
-    }));
-  }
+  beachAgents.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
   if (!ownerId) {
     return {
