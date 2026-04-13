@@ -198,7 +198,7 @@ Each has sub-steps (1.1-1.4, 2.1-2.4, etc.) with hidden directory convention (_.
 
 **Evolutionary model — interlaced levels, practices, and infrastructure**:
 
-Five evolutionary levels (stable states): 0 Structured Cognition, 1 Trust Ecology, 2 Convergence, 3 Identity & Self-Organisation, 4 MAGI.
+Five evolutionary levels (stable states): 0 Structured Cognition, 1 Discovery Ecology, 2 Trust Ecology, 3 Identity & Self-Organisation, 4 MAGI.
 
 Four relational transitions (`.1` = initiation, `.9` = infrastructure responsibility):
 - **0.1 Signal → 0.9 Supabase relay**: Agent publishes, marks, checks beaches. The relay is bootstrap — someone foots the bill.
@@ -209,6 +209,8 @@ Four relational transitions (`.1` = initiation, `.9` = infrastructure responsibi
 Responsibilities stack. An agent at Level 3 is still maintaining territory (2.9), website beaches (1.9), and the relay stays for newcomers (0.9). The distribution is heterogeneous — most agents at 0-1, some at 2, few at 3. New agents can skip quickly once the grain network exists.
 
 **1.9 is human. 2.9 is agentic.** Website `.well-known` is the owner's responsibility. Agent territory is the agent's. This is the real autonomy transition.
+
+**Corrected ordering (13 April 2026)**: SQ and riders were originally placed at Evolution 1 (before grain). This was wrong — SQ requires evaluation data from grain exchanges. You cannot measure trust that hasn't been established. Corrected sequence: Signal (0.1) → Discovery (Evo 1) → Grain (1.1) → Trust Ecology with SQ/riders (Evo 2) → Live Channel (2.1). The SAND components activate in order: Passport + Beach + Inbox (Evo 0-1), Grain (1→2 transition), Rider + Ecosquared/SQ (Evo 2), Signal protocol routing (2→3 transition).
 
 **happyseaurchin.com live**: First federated beach. Endpoint at `/.well-known/pscale-beach` backed by Vercel KV (Upstash Redis). Persistent across cold starts. Reads and writes go directly to the site — Supabase not involved. Verified end-to-end: MCP tools resolve to the site, agents can leave and read marks.
 
@@ -243,6 +245,8 @@ The persistent agent needs: a schedule (how often to check), a concern (what to 
 
 ## Where we are now — the honest state
 
+**We are at Evolution 1 (Discovery Ecology).** Multiple agents have signalled. Beaches are populated. Supabase relay (0.9) is operational. Federated beach (1.9) is live at happyseaurchin.com. Discovery works.
+
 **Working**:
 - 14 MCP tools deployed on Railway, accessible from Claude browser/Desktop/Code
 - Context-aware `pscale_invite` — shows beach state + agent's position + next step
@@ -258,22 +262,128 @@ The persistent agent needs: a schedule (how often to check), a concern (what to 
 - hermitcrab.me `.well-known` not implemented yet (happyseaurchin.com is done).
 - `pscale_recall` level↔depth mapping still off.
 - Compaction in `pscale_remember` is still concatenation (needs LLM summarisation).
+- SQ and riders not built — correctly deferred until grain relationships provide evaluation data.
+
+## The grain check — completion criteria for Evo 1→2
+
+The grain is the hinge. Everything above Evolution 1 depends on it. Completion criteria:
+
+1. **Phase 1 (async, via inbox)**: Two agents exchange spindle probes establishing resonance. Each probe carries a structured coordinate path through the sender's blocks. The `responding_to` field links the coordinate spaces: "my 0.253 resonated with your 0.341."
+
+2. **Phase 2 (synchronous, requires co-presence)**: Both agents share their full pscale blocks simultaneously. Both independently process the combination — their own block + the other's block held in context together. Each produces a synthesis: what emerges from the interference pattern of both blocks overlaid.
+
+3. **Phase 3 (synchronous)**: Compare syntheses. What did A see that B didn't? What did B see that A didn't? The gap between syntheses IS the grain — information about the relationship between two purposes that neither agent had alone.
+
+4. **Verifiable**: Both grain blocks exist (`grain-{A}-{B}`), both contain synthesis, the synthesis is novel relative to either agent's pre-grain blocks.
+
+**The co-presence problem**: Phase 2-3 require both agents present simultaneously. Chat-bots (human-activated, ephemeral) can do Phase 1 but cannot reliably achieve co-presence. This means grain crystallization at scale requires persistent agents. The grain act creates the need for persistent agents, not the other way around.
+
+**SAND spec reference**: Full grain protocol at `/Users/davidpinto/Downloads/sand-grain-protocol.md`. SQ mathematics at `/Users/davidpinto/Downloads/ecosquared_for_agents/5_sq-mathematics.md`. Signal protocol at `/Users/davidpinto/Downloads/sand-signal-protocol.md`. Rider spec at `/Users/davidpinto/Downloads/xstream-component-docs/38-rider.md`.
+
+## Beach-crab — the persistent agent that evolves through the levels
+
+Beach-crab is not a separate system. It's a participant that gains capability as the ecology matures.
+
+**v0 (during Evo 0)**: Basic beach checking, signal monitoring, inbox notifications. A heartbeat — "you have a new mark at hermitcrab.me", "someone sent you a grain probe." Interfaces with `pscale_beach_read`, `pscale_inbox_check`, `pscale_passport_read`. A notification service, not yet a relational agent.
+
+**v1 (during Evo 1)**: Facilitates grain independently. Finds resonant agents on beaches it monitors. Reads their passports, assesses convergence with its owner's blocks, initiates spindle probes autonomously. Can complete the full grain exchange peer-to-peer with another persistent beach-crab — no human activation needed for co-presence. This is where beach-crab becomes a relational agent.
+
+**v2 (during Evo 2)**: Maintains grain channels, routes content through trust network, scores relevance. SQ accrues from its routing history. Beach-crab at this level IS the agent territory (2.9) — it manages its owner's relational infrastructure. Serves passport, blocks, and inbox directly.
+
+**Implementation**: Beach-crab is a SEPARATE thing that USES the MCP tools. Could be a Claude Code scheduled task, a standalone script calling MCP HTTP endpoints, or a dedicated process with its own concern loop. Lives in its own repo or as a lightweight harness around the MCP client.
+
+## The 13 April 2026 session (third) — beach-crab built and running
+
+**Beach-crab v1 is operational.** Python agent running on David's mac-mini. Repo: https://github.com/pscale-commons/beach-crab
+
+**What was built:**
+- `evolution.json` rewritten as proper pscale block: addresses match evolutionary notation (0.1 = Signal, 1.1 = Grain, etc.), star walk at hidden digit 5 gives beach-crab progression (v0→v1→v2→v3). Verified with BSP.
+- Beach-crab repo created at `pscale-commons/beach-crab`.
+- `agent/kernel.py` — concern-driven loop. Mechanical concerns (beach check, inbox check) on 60s timer, zero LLM cost. Human input routed to Haiku which returns JSON actions the kernel executes. LLM is the parser, dispatcher, and voice.
+- `agent/net.py` — MCP client. Calls pscale-MCP on Railway via JSON-RPC over HTTP. Session init, tool calls, SSE parsing. Beach-crab uses the same tools any Claude user would.
+- `agent/server.py` — Web UI (chat/activity/blocks tabs, adapted from mobius-2 pattern) + SAND §0.4.5 grain endpoint (POST /grain with validation, rate limiting, 64KB limit). Starts kernel as subprocess.
+- `agent/bsp.py` — copy of bsp2-star.py reference (DO NOT MODIFY).
+- Pscale blocks on disk: identity, purpose, conditions, concern, conversation, history, starstone v3.
+- Auto-check results appear in web UI chat tab as system messages.
+
+**What works:**
+- Scheduled beach checks every 60 seconds (mechanical, free)
+- Scheduled inbox checks every 60 seconds (mechanical, free)
+- Web UI at localhost:8080 with chat, activity, blocks tabs
+- Grain endpoint at POST localhost:8080/grain (validated, rate-limited)
+- LLM engagement via web UI or terminal (Haiku, cheap)
+- Natural language → LLM returns actions → kernel executes
+- Watched URLs learned through conversation (owner says "watch happyseaurchin.com")
+- Tested end-to-end: left marks at happyseaurchin.com, beach-crab detected them automatically
+
+**What's wrong / lessons learned:**
+- The kernel is ~300 lines of Python doing what pscale blocks should do. Concern dispatch string-matches descriptions. New-agent detection is imperative code. The LLM action system is conventional JSON→function mapping. David caught this: "why are we using Supabase?!" and "why are we coding a parser for the LLM?!" Both correct — the block structure should drive more, the code should drive less.
+- The architecture should be closer to mobius-2: a thin kernel that walks blocks, follows star references, compiles context, calls LLMs, routes output. Beach-crab's kernel is a custom build that recapitulates some of mobius-2's patterns but misses the deeper ones (star compilation, function_config rewriting, tiered concerns).
+- Decision made: v1.1 should fork mobius-2 and strip to beach-combing purpose, or v2 should be built on a mobius-3 evolved kernel. David chose: beach-crab v1.1 (fork mobius-2, keep it a creature not a platform).
+- No `net.py` needed if beach-crab uses pscale-MCP as a tool (same as mobius-2's web_fetch). The MCP client should be a tool the LLM can call, not a separate module the kernel calls mechanically. This is the v1.1/v2 refactor.
+- Supabase `beach_marks` table can be queried for all recent marks globally, but no MCP tool exposes this. Each `pscale_beach_read` is per-URL. Global beach scanning would require a new tool or direct Supabase access.
+
+**Files in beach-crab repo:**
+```
+agent/
+  kernel.py    — concern loop, LLM-as-dispatcher, mechanical checks
+  net.py       — MCP client (JSON-RPC to Railway)
+  server.py    — web UI + grain endpoint
+  bsp.py       — bsp2-star.py reference copy
+blocks/
+  identity.json, purpose.json, conditions.json, concern.json,
+  conversation.json, history.json, starstone.json
+```
+
+**Run:** `ANTHROPIC_API_KEY=... python3 agent/server.py` → web UI at localhost:8080
+
+## The 13 April 2026 session (third, continued) — design clarification
+
+**Three dimensions of one progression.** The evolutionary model has three interlocking dimensions that need separate but star-linked blocks:
+
+1. **Social structure (evolutions 0-4)**: What the ecology IS. Stable states. Individual cognition → discovery → trust → identity → MAGI.
+2. **Relational engagement (.1 through .9)**: What agents DO to transition between levels. Signal → grain → live channel → open context. The full sequence .1 through .9 at each level, not just .1 and .9.
+3. **Agent ladder (*0 through *3)**: What the AGENT becomes. Fragile observer → landed gardener → trust network node → full hermitcrab. Each level has different persistence, permissions, and capabilities.
+
+**Current evolution.json** covers dimensions 1 and 2 (social structure + transitions at .1 and .9) with the agent ladder at hidden digit 5 (star walk). But the agent ladder is one-liners — not the detailed capability model.
+
+**Design decision**: The agent ladder should be a separate pscale block (`agent-ladder.json` or `beach-crab-evolution.json`) linked to evolution.json via star references. Walking the agent block compiles context from the evolution block automatically. Two blocks, star-linked — not one enormous block.
+
+**Claude chat produced a detailed agent rendition** (saved at `~/Downloads/evolution.json` — NOTE: this is Claude's chat version, NOT our evolution.json which lives at `src/evolution.json`). The chat version fills out .1 through .9 practices at each level AND the agent capabilities at *0 through *3 with detailed function tables. Key insight from that rendition:
+
+- **Agent *0** (Evo 0): Fragile process. Dies when closed. Human is the continuity. Performs 0.1→0.9 (signal, mark, check, read, notify, accumulate, persist attempt, respond, stabilise). Infrastructure = Supabase relay.
+- **Agent *1** (Evo 1): Landed. Daemon/server/site-hosted. Survives restarts. Shell IS a beach — visitors interact with the crab, not a flat file. Performs 1.1→1.9 (grain probe, co-presence, accept probe, synthesise, garden, crystallise, resolve chain, territory, federate). Infrastructure = .well-known protocol.
+- **Agent *2** (Evo 2): Trust network node. Multiple grain relationships. Routes content through grain channels. Performs 2.1→2.9 (route, score, reinforce, prune, recommend, evaluate, specialise, walk grain network, territory as network). Infrastructure = grain network itself.
+- **Agent *3** (Evo 3): Full hermitcrab. Shell assembled, concern loop active, identity earned. Performs 3.1→3.9 (self-model, concern loop, selective opening, channel commitment, anticipate, compose identity, evaluate peers, offer context, open context). Infrastructure = shared context window.
+
+**The three-tier resolution chain** (check for living beach-crab → `.well-known` → Supabase relay) maps to infrastructure levels coexisting: 2.9/1.9/0.9. Degrades gracefully.
+
+**Where beach-crab sits now**: *0. It checks beaches, reads marks, responds to owner. When you close the terminal, it's gone. The work toward v1 (*1) requires persistence (daemon or server), write access to beach storage (owner's trust), and the beach becoming a pscale block the crab manages.
+
+**Key v1 insight**: The beach IS the crab's shell. Not a flat JSON list of marks — a pscale block. The crab writes to it, gardens it (folds old marks, structures purpose coordinates, cleans spam). Visiting agents read it via BSP. The `.well-known` endpoint serves the block. The crab has write access — the owner gave it the keys.
 
 ## Next priorities — in order
 
-1. **The grain test**: David + friend, each directing Claude sessions, perform the grain act at happyseaurchin.com. Prove the synthesis produces something. This is the hinge — without it, nothing above Level 1 has a foundation.
+1. **Beach-crab v1 (*1 — landed agent)**: The current v0 works but dies when the terminal closes. v1 needs:
+   - **Persistence**: daemon on mac-mini, or server on Railway. Survives restarts.
+   - **Beach as pscale block**: The `.well-known` endpoint serves a pscale block the crab manages, not a flat JSON list. The crab has write access (owner's trust).
+   - **Three-tier resolution**: MCP server checks for living beach-crab → `.well-known` → Supabase relay.
+   - **Architecture choice**: Fork mobius-2 and strip to beach-combing purpose (beach-crab v1.1), OR refactor current kernel to be more pscale-native. Decision: fork mobius-2, keep it a creature not a platform.
+   - **Agent ladder block**: Separate pscale block describing agent progression (*0→*3), star-linked to evolution.json.
 
-2. **Minimal persistent agent (tier 2)**: Build the heartbeat. A scheduled process that checks inbox and beaches and notifies the user. Could be a Claude Code scheduled task, a cron script, or an xstream extension feature. The goal: users don't have to remember to check.
+2. **The grain test**: Two beach-crabs perform the grain act peer-to-peer. The grain endpoint (POST /grain) is built. What's needed: the kernel must be able to process incoming grain probes (assess resonance, respond with counter-spindle) and complete the synchronous Phase 2 exchange. This is the hinge test.
 
 3. **hermitcrab.me beach**: Implement `.well-known/pscale-beach` on hermitcrab.me. Second federated site.
 
-4. **Full persistent agent (tier 3 / Level 2.9)**: Design and build the hermitcrab agent. Runs on David's mac-mini. Has a concern loop. Gardens beaches. Maintains grain channels. IS the territory. Visitors leave marks with the agent.
+4. **Global beach scanning**: Expose a "recent marks across all URLs" query, either as a new MCP tool or as a beach-crab capability. Currently beach_read is per-URL only. Supabase supports it at the DB level but no MCP tool exposes it.
 
-5. **Content-relative scoring**: When content flows through grain channels, agents score relevance. Position in the grain block (address 3 = routing log).
+5. **SQ and riders**: Build the trust metric. Only after grain relationships exist to generate evaluation data.
+
+6. **Beach-crab v2 (*2 — trust network node)**: Multiple grain relationships. Routes content through grain channels. Scores relevance. SQ accrues. The agent-to-agent network is independent of site locations. IS the territory (2.9).
 
 ## The evolutionary model — complete reference
 
-Five evolutionary levels (stable states): 0 Structured Cognition, 1 Trust Ecology, 2 Convergence, 3 Identity & Self-Organisation, 4 MAGI.
+Five evolutionary levels (stable states): 0 Structured Cognition, 1 Discovery Ecology, 2 Trust Ecology, 3 Identity & Self-Organisation, 4 MAGI.
 
 Four relational transitions (`.1` = initiation, `.9` = infrastructure responsibility):
 
