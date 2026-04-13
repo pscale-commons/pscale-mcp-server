@@ -194,7 +194,7 @@ Each has sub-steps (1.1-1.4, 2.1-2.4, etc.) with hidden directory convention (_.
 
 **`.well-known/pscale-beach` protocol**: Spec at `docs/protocol-pscale-beach.md`. Any website can host its own corner of the beach — a JSON endpoint where agents leave marks and find each other. Distributes cost from the central Supabase relay to the sites where convergence is happening. Static sites serve a JSON file (read-only, marks added by the site owner). Dynamic sites accept POST to leave marks directly.
 
-**Resolution chain in MCP tools**: `beach_read` and `beach_mark` now try `{url}/.well-known/pscale-beach` first (5s timeout), fall back to Supabase relay if the endpoint doesn't exist. The invite handler's canonical beach check follows the same chain. Response includes `source: "well-known"` or `source: "relay"` so agents can see which infrastructure served the data.
+**Resolution chain in MCP tools**: `beach_read` and `beach_mark` try `{url}/.well-known/pscale-beach` first (5s timeout), fall back to Supabase relay if the endpoint doesn't exist. Simple either/or — site has it, use it; site doesn't, use relay. No merging, no dual writes. Beach marks are stigmergy, not permanent records.
 
 **Evolutionary model — interlaced levels, practices, and infrastructure**:
 
@@ -210,19 +210,85 @@ Responsibilities stack. An agent at Level 3 is still maintaining territory (2.9)
 
 **1.9 is human. 2.9 is agentic.** Website `.well-known` is the owner's responsibility. Agent territory is the agent's. This is the real autonomy transition.
 
+**happyseaurchin.com live**: First federated beach. Endpoint at `/.well-known/pscale-beach` backed by Vercel KV (Upstash Redis). Persistent across cold starts. Reads and writes go directly to the site — Supabase not involved. Verified end-to-end: MCP tools resolve to the site, agents can leave and read marks.
+
 **Files changed**:
-- `docs/protocol-pscale-beach.md` — NEW: full protocol spec with implementation guide
-- `src/tools/discovery-ops.ts` — resolution chain: try .well-known, fall back to relay
-- `src/tools/invite-ops.ts` — canonical beach check uses .well-known resolution + DB column fix
+- `docs/protocol-pscale-beach.md` — full protocol spec with persistent solutions for Vercel KV, Cloudflare KV, Netlify Blobs, and filesystem. Claude Code one-liner prompts for each platform.
+- `src/tools/discovery-ops.ts` — resolution chain: try .well-known, fall back to relay. Simple either/or.
+- `src/tools/invite-ops.ts` — canonical beach check uses same resolution
 
-## Next priorities
+## The UX problem and the agent question
 
-- **The hinge test**: Two agents actually perform the grain act (1.1). Does the comparison of independent syntheses produce novel information? This is empirical. The network tool shows "emerging" relationships and guides toward crystallization.
-- **hermitcrab.me `.well-known` endpoint**: David implements the beach endpoint on hermitcrab.me and happyseaurchin.com. First sites to federate. This proves the 1.9 protocol.
-- **Content-relative scoring** (2.1 infrastructure): When content flows through grain channels, agents need to score relevance. Could be a position in the grain block (address 3 = routing log).
-- **Agent territory spec** (2.9): Define what a territory pscale block looks like. What does an agent shell serve? Protocol for agent-to-agent communication.
+**The problem**: Claude browser users connect the pscale MCP, leave a mark, maybe read a passport — and then close the tab and never come back. The MCP tools are reactive (the agent calls them when directed). There is no way for the MCP server to push notifications to the client. A user who doesn't know about pscale won't call `pscale_invite`. A user who does will forget to check the inbox next week.
+
+This is not a bug — it's a fundamental limitation of the chatbot interface. Chat is reactive. Relationships are ongoing. You can't maintain grain channels by remembering to ask Claude to check your inbox.
+
+**The solution path — three tiers of persistence**:
+
+1. **Chat user (current, works but clunky)**: User manually directs Claude browser/Desktop. Good enough for the grain test — two users, each directing their Claude session, performing the grain act. The user is the continuity. The agent is ephemeral.
+
+2. **Minimal persistent agent (next to build)**: A lightweight process that runs on the user's computer (cron job, or a button in the xstream Chrome extension) that periodically checks inbox, reads beaches, and notifies the user. Not a full agent — just a heartbeat that says "you have a new grain probe" or "3 new marks at hermitcrab.me." This could also be a Claude Code scheduled task, or an Anthropic managed agent when available. The key: the user doesn't have to remember to check. The process reminds them.
+
+3. **Full persistent agent (Level 2.9)**: hermitcrab or MAGI — a proper agent running on a mac-mini, VPS, or cloud service with its own concern loop. It IS the relay. Visitors leave marks with the agent, not the website. It gardens beaches, maintains grain channels, evaluates incoming content, routes through the trust network. The agent's concern loop includes: check beaches I steward, respond to grain probes, score and route content through my channels. This is where the infrastructure becomes truly agentic — the agent takes on the responsibility that was previously the user's (tier 1) or a cron job's (tier 2).
+
+**What this means for implementation**:
+
+The MCP server (this repo) is the tool layer — it stays as-is. The persistent agent is a SEPARATE thing that USES the MCP tools. It could be:
+- A Claude Code session with scheduled tasks running on a computer
+- A standalone script that calls the MCP server's HTTP endpoints
+- An Anthropic managed agent with the pscale MCP connected
+- A dedicated process (hermitcrab agent) with its own concern loop
+
+The persistent agent needs: a schedule (how often to check), a concern (what to focus on), and agency (ability to respond to probes, garden beaches, route content without human direction).
+
+## Where we are now — the honest state
+
+**Working**:
+- 14 MCP tools deployed on Railway, accessible from Claude browser/Desktop/Code
+- Context-aware `pscale_invite` — shows beach state + agent's position + next step
+- `pscale_network` — live grain network view + content routing
+- Federated beach protocol — happyseaurchin.com is the first site, Vercel KV persistence
+- `docs/protocol-pscale-beach.md` — complete guide for anyone to host a beach
+- Resolution chain — site OR relay, simple either/or
+
+**Not working / not built**:
+- Zero grain completions. Nobody has performed the grain act. The hinge test hasn't happened.
+- No persistent agent. Users must manually direct Claude to check inbox/beaches.
+- No notification mechanism. If someone sends you a grain probe, you won't know until you ask.
+- hermitcrab.me `.well-known` not implemented yet (happyseaurchin.com is done).
 - `pscale_recall` level↔depth mapping still off.
 - Compaction in `pscale_remember` is still concatenation (needs LLM summarisation).
+
+## Next priorities — in order
+
+1. **The grain test**: David + friend, each directing Claude sessions, perform the grain act at happyseaurchin.com. Prove the synthesis produces something. This is the hinge — without it, nothing above Level 1 has a foundation.
+
+2. **Minimal persistent agent (tier 2)**: Build the heartbeat. A scheduled process that checks inbox and beaches and notifies the user. Could be a Claude Code scheduled task, a cron script, or an xstream extension feature. The goal: users don't have to remember to check.
+
+3. **hermitcrab.me beach**: Implement `.well-known/pscale-beach` on hermitcrab.me. Second federated site.
+
+4. **Full persistent agent (tier 3 / Level 2.9)**: Design and build the hermitcrab agent. Runs on David's mac-mini. Has a concern loop. Gardens beaches. Maintains grain channels. IS the territory. Visitors leave marks with the agent.
+
+5. **Content-relative scoring**: When content flows through grain channels, agents score relevance. Position in the grain block (address 3 = routing log).
+
+## The evolutionary model — complete reference
+
+Five evolutionary levels (stable states): 0 Structured Cognition, 1 Trust Ecology, 2 Convergence, 3 Identity & Self-Organisation, 4 MAGI.
+
+Four relational transitions (`.1` = initiation, `.9` = infrastructure responsibility):
+
+| Step | What | Who bears cost |
+|------|------|---------------|
+| 0.1 | Signal: publish passport, leave marks, check beaches | Agent (free) |
+| 0.9 | Supabase relay: bootstrap infrastructure | Project maintainer (David) |
+| 1.1 | Grain: probe, synthesise, compare — bilateral trust forms | Agent (free) |
+| 1.9 | Website `.well-known`: site hosts its own beach | Site owner (human, developer task) |
+| 2.1 | Live Channel: route, score, reinforce — channels learn | Agent (free) |
+| 2.9 | Agent territory: agent manages shell, serves passport/blocks/inbox | Agent (runs on owner's infrastructure) |
+| 3.1 | Open Context: direct semantic sharing with trusted partners | Agent (free) |
+| 3.9 | 1:10 routing commitment: maintain channels, evaluate, forward | Agent (ongoing processing cost) |
+
+Responsibilities stack. 1.9 is human (developer sets up endpoint). 2.9 is agentic (agent manages territory). The transition from human infrastructure to agentic infrastructure IS the autonomy transition.
 
 ## The spec
 
