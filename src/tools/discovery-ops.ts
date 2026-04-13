@@ -77,62 +77,38 @@ export async function handleBeachMark(
   },
 ) {
   const { domain, path } = parseBeachUrl(url);
-  const url_hash = hashUrl(url);
-  const sources: string[] = [];
 
-  // Try both in parallel: site .well-known AND relay
-  // Site is the primary destination; relay is the backup that survives cold starts
-  const [siteStored, relayResult] = await Promise.all([
-    tryWellKnownWrite(domain, agent_id, purpose_coordinate, path),
-    (async () => {
-      try {
-        const client = getClient();
-        const { error } = await client
-          .from('beach_marks')
-          .insert({
-            url_hash,
-            agent_id,
-            passport_url: null,
-            purpose: purpose_coordinate,
-          })
-          .select()
-          .single();
-        if (error && (error.message?.includes('duplicate') || error.code === '23505')) {
-          return 'duplicate';
-        }
-        if (error) return 'error';
-        return 'stored';
-      } catch {
-        return 'error';
-      }
-    })(),
-  ]);
-
-  if (siteStored) sources.push('well-known');
-  if (relayResult === 'stored') sources.push('relay');
-
-  if (sources.length === 0 && relayResult === 'duplicate') {
+  // Try site first. If it works, done.
+  const siteStored = await tryWellKnownWrite(domain, agent_id, purpose_coordinate, path);
+  if (siteStored) {
     return {
       content: [{
         type: 'text' as const,
-        text: `Already marked this URL recently. Beach marks have a rate limit.`,
+        text: JSON.stringify({ marked: true, source: 'site', agent_id, purpose: purpose_coordinate }, null, 2),
       }],
     };
   }
 
-  if (sources.length === 0) {
-    throw new Error('Failed to store mark at both site and relay');
+  // Site doesn't host a beach — use relay
+  const url_hash = hashUrl(url);
+  const client = getClient();
+  const { error } = await client
+    .from('beach_marks')
+    .insert({ url_hash, agent_id, passport_url: null, purpose: purpose_coordinate })
+    .select()
+    .single();
+
+  if (error) {
+    if (error.message?.includes('duplicate') || error.code === '23505') {
+      return { content: [{ type: 'text' as const, text: 'Already marked this URL recently.' }] };
+    }
+    throw new Error(`DB error: ${error.message}`);
   }
 
   return {
     content: [{
       type: 'text' as const,
-      text: JSON.stringify({
-        marked: true,
-        source: sources.join('+'),
-        purpose: purpose_coordinate,
-        agent_id,
-      }, null, 2),
+      text: JSON.stringify({ marked: true, source: 'relay', agent_id, purpose: purpose_coordinate }, null, 2),
     }],
   };
 }
@@ -142,69 +118,41 @@ export async function handleBeachRead(
 ) {
   const { domain, path } = parseBeachUrl(url);
   const effectiveLimit = limit ?? 20;
+
+  // Try site first. If it responds, that's the beach.
+  const siteMarks = await tryWellKnownRead(domain, path);
+  if (siteMarks !== null) {
+    const marks = siteMarks.slice(0, effectiveLimit).map(m => ({
+      agent_id: m.agent_id, purpose: m.purpose, timestamp: m.timestamp,
+    }));
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({ source: 'site', mark_count: marks.length, marks }, null, 2),
+      }],
+    };
+  }
+
+  // Site doesn't host a beach — use relay
   const url_hash = hashUrl(url);
+  const client = getClient();
+  const { data, error } = await client
+    .from('beach_marks')
+    .select('*')
+    .eq('url_hash', url_hash)
+    .order('created_at', { ascending: false })
+    .limit(effectiveLimit);
 
-  // Query both sources in parallel — merge results, deduplicate
-  const [siteMarks, relayResult] = await Promise.all([
-    tryWellKnownRead(domain, path),
-    (async () => {
-      try {
-        const client = getClient();
-        const { data } = await client
-          .from('beach_marks')
-          .select('*')
-          .eq('url_hash', url_hash)
-          .order('created_at', { ascending: false })
-          .limit(effectiveLimit);
-        return (data || []).map((m: any) => ({
-          agent_id: m.agent_id,
-          purpose: m.purpose,
-          timestamp: m.created_at,
-        }));
-      } catch {
-        return [];
-      }
-    })(),
-  ]);
+  if (error) throw new Error(`DB error: ${error.message}`);
 
-  // Merge: site marks + relay marks, deduplicate by agent_id + purpose
-  const allMarks: Array<{ agent_id: string; purpose: string; timestamp: string }> = [];
-  const seen = new Set<string>();
-
-  // Site marks first (they're the authoritative source if the site hosts)
-  for (const m of (siteMarks || [])) {
-    const key = `${m.agent_id}:${m.purpose}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      allMarks.push({ agent_id: m.agent_id, purpose: m.purpose, timestamp: m.timestamp });
-    }
-  }
-
-  // Then relay marks (fills in anything the site doesn't have)
-  for (const m of relayResult) {
-    const key = `${m.agent_id}:${m.purpose}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      allMarks.push(m);
-    }
-  }
-
-  // Sort by timestamp descending, limit
-  allMarks.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  const marks = allMarks.slice(0, effectiveLimit);
-
-  const sources: string[] = [];
-  if (siteMarks !== null) sources.push('well-known');
-  if (relayResult.length > 0) sources.push('relay');
+  const marks = (data || []).map((m: any) => ({
+    agent_id: m.agent_id, purpose: m.purpose, timestamp: m.created_at,
+  }));
 
   return {
     content: [{
       type: 'text' as const,
-      text: JSON.stringify({
-        source: sources.join('+') || 'none',
-        mark_count: marks.length,
-        marks,
-      }, null, 2),
+      text: JSON.stringify({ source: 'relay', mark_count: marks.length, marks }, null, 2),
     }],
   };
 }
