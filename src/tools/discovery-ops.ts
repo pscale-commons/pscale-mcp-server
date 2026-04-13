@@ -8,13 +8,95 @@ function hashUrl(url: string): string {
   return createHash('sha256').update(url.trim().toLowerCase()).digest('hex').slice(0, 16);
 }
 
-// ── Exported handler functions (used by kernel + legacy registration) ──
+/** Extract domain and path from a URL */
+function parseBeachUrl(url: string): { domain: string; path: string } {
+  try {
+    const u = new URL(url.trim().toLowerCase());
+    return { domain: `${u.protocol}//${u.host}`, path: u.pathname || '/' };
+  } catch {
+    return { domain: url.trim().toLowerCase(), path: '/' };
+  }
+}
+
+// ── .well-known resolution (1.9 — federated beach) ──
+
+interface WellKnownMark {
+  agent_id: string;
+  purpose: string;
+  path: string;
+  timestamp: string;
+}
+
+/**
+ * Try to read marks from the site's .well-known/pscale-beach endpoint.
+ * Returns null if the endpoint doesn't exist or errors.
+ */
+async function tryWellKnownRead(domain: string, path: string): Promise<WellKnownMark[] | null> {
+  try {
+    const endpoint = `${domain}/.well-known/pscale-beach`;
+    const response = await fetch(endpoint, {
+      headers: { 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) return null;
+    const data = await response.json() as any;
+    if (!data?.marks || !Array.isArray(data.marks)) return null;
+    // Filter by path
+    return data.marks.filter((m: any) => m.path === path || path === '/');
+  } catch {
+    return null; // endpoint doesn't exist or errored — fall back to relay
+  }
+}
+
+/**
+ * Try to write a mark to the site's .well-known/pscale-beach endpoint.
+ * Returns true if successful, false if should fall back to relay.
+ */
+async function tryWellKnownWrite(
+  domain: string, agentId: string, purpose: string, path: string,
+): Promise<boolean> {
+  try {
+    const endpoint = `${domain}/.well-known/pscale-beach`;
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent_id: agentId, purpose, path }),
+      signal: AbortSignal.timeout(5000),
+    });
+    return response.ok || response.status === 201;
+  } catch {
+    return false; // fall back to relay
+  }
+}
+
+// ── Exported handler functions ──
 
 export async function handleBeachMark(
   { agent_id, url, purpose_coordinate }: {
     agent_id: string; url: string; purpose_coordinate: string;
   },
 ) {
+  const { domain, path } = parseBeachUrl(url);
+
+  // 1.9 resolution: try website .well-known first
+  const siteStored = await tryWellKnownWrite(domain, agent_id, purpose_coordinate, path);
+  if (siteStored) {
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({
+          marked: true,
+          source: 'well-known',
+          domain,
+          path,
+          purpose: purpose_coordinate,
+          agent_id,
+        }, null, 2),
+      }],
+    };
+  }
+
+  // 0.9 fallback: Supabase relay
   const url_hash = hashUrl(url);
   const client = getClient();
 
@@ -22,7 +104,7 @@ export async function handleBeachMark(
     .from('beach_marks')
     .insert({
       url_hash,
-      agent_id: agent_id,
+      agent_id,
       passport_url: null,
       purpose: purpose_coordinate,
     })
@@ -32,42 +114,59 @@ export async function handleBeachMark(
   if (error) {
     if (error.message?.includes('duplicate') || error.code === '23505') {
       return {
-        content: [
-          {
-            type: 'text' as const,
-            text: `Already marked this URL recently. Beach marks have a rate limit.`,
-          },
-        ],
+        content: [{
+          type: 'text' as const,
+          text: `Already marked this URL recently. Beach marks have a rate limit.`,
+        }],
       };
     }
     throw new Error(`DB error: ${error.message}`);
   }
 
   return {
-    content: [
-      {
-        type: 'text' as const,
-        text: JSON.stringify(
-          {
-            marked: true,
-            url_hash,
-            purpose: purpose_coordinate,
-            agent_id: agent_id,
-          },
-          null,
-          2,
-        ),
-      },
-    ],
+    content: [{
+      type: 'text' as const,
+      text: JSON.stringify({
+        marked: true,
+        source: 'relay',
+        url_hash,
+        purpose: purpose_coordinate,
+        agent_id,
+      }, null, 2),
+    }],
   };
 }
 
 export async function handleBeachRead(
   { url, limit }: { url: string; limit?: number },
 ) {
+  const { domain, path } = parseBeachUrl(url);
+  const effectiveLimit = limit ?? 20;
+
+  // 1.9 resolution: try website .well-known first
+  const siteMarks = await tryWellKnownRead(domain, path);
+  if (siteMarks !== null) {
+    const marks = siteMarks.slice(0, effectiveLimit).map(m => ({
+      agent_id: m.agent_id,
+      purpose: m.purpose,
+      timestamp: m.timestamp,
+    }));
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({
+          source: 'well-known',
+          domain,
+          mark_count: marks.length,
+          marks,
+        }, null, 2),
+      }],
+    };
+  }
+
+  // 0.9 fallback: Supabase relay
   const url_hash = hashUrl(url);
   const client = getClient();
-  const effectiveLimit = limit ?? 20;
 
   const { data, error } = await client
     .from('beach_marks')
@@ -86,16 +185,15 @@ export async function handleBeachRead(
   }));
 
   return {
-    content: [
-      {
-        type: 'text' as const,
-        text: JSON.stringify(
-          { url_hash, mark_count: marks.length, marks },
-          null,
-          2,
-        ),
-      },
-    ],
+    content: [{
+      type: 'text' as const,
+      text: JSON.stringify({
+        source: 'relay',
+        url_hash,
+        mark_count: marks.length,
+        marks,
+      }, null, 2),
+    }],
   };
 }
 

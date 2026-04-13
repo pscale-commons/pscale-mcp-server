@@ -33,19 +33,41 @@ async function getNetworkState(ownerId?: string): Promise<AgentState> {
   const client = getClient();
   const beachHash = hashUrl(CANONICAL_BEACH);
 
-  // Always check canonical beach
-  const { data: beachData } = await client
-    .from('beach_marks')
-    .select('agent_id, purpose, created_at')
-    .eq('url_hash', beachHash)
-    .order('created_at', { ascending: false })
-    .limit(20);
+  // Always check canonical beach — try .well-known first (1.9), fall back to relay (0.9)
+  let beachAgents: BeachAgent[] = [];
+  try {
+    const res = await fetch(`${CANONICAL_BEACH}/.well-known/pscale-beach`, {
+      headers: { 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (res.ok) {
+      const data = await res.json() as any;
+      if (data?.marks && Array.isArray(data.marks)) {
+        beachAgents = data.marks.map((m: any) => ({
+          agent_id: m.agent_id,
+          purpose: m.purpose,
+          timestamp: m.timestamp,
+        }));
+      }
+    }
+  } catch {
+    // .well-known not available — fall back to relay
+  }
 
-  const beachAgents = (beachData || []).map((m: any) => ({
-    agent_id: m.agent_id,
-    purpose: m.purpose,
-    timestamp: m.created_at,
-  }));
+  if (beachAgents.length === 0) {
+    const { data: beachData } = await client
+      .from('beach_marks')
+      .select('agent_id, purpose, created_at')
+      .eq('url_hash', beachHash)
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    beachAgents = (beachData || []).map((m: any) => ({
+      agent_id: m.agent_id,
+      purpose: m.purpose,
+      timestamp: m.created_at,
+    }));
+  }
 
   if (!ownerId) {
     return {
@@ -64,7 +86,7 @@ async function getNetworkState(ownerId?: string): Promise<AgentState> {
     client.from('sand_passports').select('id').eq('id', ownerId).maybeSingle(),
     client.from('beach_marks').select('url_hash').eq('agent_id', ownerId),
     client.from('sand_inbox').select('id').eq('to_agent', ownerId).eq('read', false),
-    client.from('pscale_blocks').select('name').eq('agent_id', ownerId).like('name', 'grain-%'),
+    client.from('pscale_blocks').select('name').eq('owner_id', ownerId).like('name', 'grain-%'),
   ]);
 
   const marks = marksResult.data || [];

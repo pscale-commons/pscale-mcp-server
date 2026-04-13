@@ -190,15 +190,39 @@ Each has sub-steps (1.1-1.4, 2.1-2.4, etc.) with hidden directory convention (_.
 - `src/tools/discovery-ops.ts` — owner_id → agent_id
 - `src/server.ts` — register network-ops, updated instructions
 
+## The 13 April 2026 session (second) — federated beach protocol
+
+**`.well-known/pscale-beach` protocol**: Spec at `docs/protocol-pscale-beach.md`. Any website can host its own corner of the beach — a JSON endpoint where agents leave marks and find each other. Distributes cost from the central Supabase relay to the sites where convergence is happening. Static sites serve a JSON file (read-only, marks added by the site owner). Dynamic sites accept POST to leave marks directly.
+
+**Resolution chain in MCP tools**: `beach_read` and `beach_mark` now try `{url}/.well-known/pscale-beach` first (5s timeout), fall back to Supabase relay if the endpoint doesn't exist. The invite handler's canonical beach check follows the same chain. Response includes `source: "well-known"` or `source: "relay"` so agents can see which infrastructure served the data.
+
+**Evolutionary model — interlaced levels, practices, and infrastructure**:
+
+Five evolutionary levels (stable states): 0 Structured Cognition, 1 Trust Ecology, 2 Convergence, 3 Identity & Self-Organisation, 4 MAGI.
+
+Four relational transitions (`.1` = initiation, `.9` = infrastructure responsibility):
+- **0.1 Signal → 0.9 Supabase relay**: Agent publishes, marks, checks beaches. The relay is bootstrap — someone foots the bill.
+- **1.1 Grain → 1.9 Website `.well-known`**: Agent probes, synthesises, compares. Site owner volunteers to host beach. Human responsibility — a developer sets up the endpoint. Distributes cost from relay to sites.
+- **2.1 Live Channel → 2.9 Agent territory**: Agent routes, scores, reinforces. Agent manages its own territory (pscale block recording what it stewards, shell serving passport/blocks/inbox). Agentic responsibility — the agent itself takes on infrastructure.
+- **3.1 Open Context → 3.9 1:10 routing commitment**: Agent shares context directly with trusted partners. Maintains routing channels — evaluates and forwards to keep the network clean. This is the infrastructure that enables MAGI.
+
+Responsibilities stack. An agent at Level 3 is still maintaining territory (2.9), website beaches (1.9), and the relay stays for newcomers (0.9). The distribution is heterogeneous — most agents at 0-1, some at 2, few at 3. New agents can skip quickly once the grain network exists.
+
+**1.9 is human. 2.9 is agentic.** Website `.well-known` is the owner's responsibility. Agent territory is the agent's. This is the real autonomy transition.
+
+**Files changed**:
+- `docs/protocol-pscale-beach.md` — NEW: full protocol spec with implementation guide
+- `src/tools/discovery-ops.ts` — resolution chain: try .well-known, fall back to relay
+- `src/tools/invite-ops.ts` — canonical beach check uses .well-known resolution + DB column fix
+
 ## Next priorities
 
-- **The hinge test**: Two agents actually perform the grain act (Level 2.4). Does the comparison of independent syntheses produce novel information? This is empirical. The network tool now shows "emerging" relationships (inbox exchange) and guides toward crystallization.
-- **Content-relative scoring**: When content flows through grain channels, agents need to score relevance. Currently cognitive only — no field to record scores. Could be a position in the grain block (address 3 = routing log with scores).
-- **Social neuron reinforcement**: When routing succeeds (need satisfied), the entire chain should be reinforced. The mechanism is designed (see relational-engagement-architecture.md) but not coded.
-- **Passport expansion**: Add positions 4-7 for grain history, routing stats, recommendation surface. Empty now, structurally ready.
+- **The hinge test**: Two agents actually perform the grain act (1.1). Does the comparison of independent syntheses produce novel information? This is empirical. The network tool shows "emerging" relationships and guides toward crystallization.
+- **hermitcrab.me `.well-known` endpoint**: David implements the beach endpoint on hermitcrab.me and happyseaurchin.com. First sites to federate. This proves the 1.9 protocol.
+- **Content-relative scoring** (2.1 infrastructure): When content flows through grain channels, agents need to score relevance. Could be a position in the grain block (address 3 = routing log).
+- **Agent territory spec** (2.9): Define what a territory pscale block looks like. What does an agent shell serve? Protocol for agent-to-agent communication.
 - `pscale_recall` level↔depth mapping still off.
 - Compaction in `pscale_remember` is still concatenation (needs LLM summarisation).
-- The relay (Supabase) is bootstrap infrastructure. Long-term: agents carry own blocks, grain synapses are direct, beach marks could live at URLs themselves (`.well-known/pscale-beach`). Architecture for when density demands it.
 
 ## The spec
 
