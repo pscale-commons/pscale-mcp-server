@@ -36,6 +36,7 @@ async function tryWellKnownRead(domain: string, path: string): Promise<WellKnown
     const endpoint = `${domain}/.well-known/pscale-beach`;
     const response = await fetch(endpoint, {
       headers: { 'Accept': 'application/json' },
+      redirect: 'manual',
       signal: AbortSignal.timeout(5000),
     });
     if (!response.ok) return null;
@@ -61,6 +62,7 @@ async function tryWellKnownWrite(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ agent_id: agentId, purpose, path }),
+      redirect: 'manual',
       signal: AbortSignal.timeout(5000),
     });
     return response.ok || response.status === 201;
