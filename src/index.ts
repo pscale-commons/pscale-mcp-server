@@ -75,11 +75,21 @@ const httpServer = createHttpServer(async (req, res) => {
     return;
   }
 
-  // POST without session or with unknown session — create new session
-  // Strip any stale session ID so the new transport doesn't reject it
+  // POST without session or with unknown session
   if (req.method === 'POST') {
+    // Only create a new session for initialize requests
+    // Reject stale tool calls — don't waste resources creating sessions that won't be used
+    const isInitialize = body && typeof body === 'object' && 'method' in body && (body as any).method === 'initialize';
+    if (sessionId && !isInitialize) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        jsonrpc: '2.0',
+        error: { code: -32000, message: 'Unknown session. Send an initialize request to start a new session.' },
+        id: (body && typeof body === 'object' && 'id' in body) ? (body as any).id : null,
+      }));
+      return;
+    }
     if (sessionId) {
-      console.log(`Stripping stale session ID ${sessionId} from POST`);
       delete req.headers['mcp-session-id'];
     }
     const transport = createSession();
