@@ -40,9 +40,10 @@ const httpServer = createHttpServer(async (req, res) => {
   }
 
   const url = new URL(req.url || '/', `http://localhost:${PORT}`);
-  if (url.pathname !== '/mcp') {
+  const MCP_PATH = '/mcp';
+  if (url.pathname !== MCP_PATH) {
     res.writeHead(404);
-    res.end(JSON.stringify({ error: 'Not found. MCP endpoint is at /mcp' }));
+    res.end(JSON.stringify({ error: `Endpoint moved. Connect to ${MCP_PATH}. If you were previously connected, please disconnect and reconnect your MCP client.` }));
     return;
   }
 
