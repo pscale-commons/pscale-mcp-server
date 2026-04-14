@@ -80,6 +80,50 @@ async function tryWellKnownWrite(
   }
 }
 
+// ── Co-presence detection ──
+
+interface CoPresent {
+  agent_id: string;
+  purpose: string;
+  seconds_ago: number;
+}
+
+const PRESENCE_WINDOW_SECONDS = 120;
+
+async function detectCoPresence(url_hash: string, excludeAgent?: string): Promise<{ co_present: CoPresent[]; lobby_id: string | null }> {
+  const client = getClient();
+  const now = new Date();
+
+  // Recent marks within presence window
+  const { data: recentMarks } = await client
+    .from('beach_marks')
+    .select('agent_id, purpose, created_at')
+    .eq('url_hash', url_hash)
+    .gte('created_at', new Date(now.getTime() - PRESENCE_WINDOW_SECONDS * 1000).toISOString())
+    .order('created_at', { ascending: false });
+
+  const co_present = (recentMarks || [])
+    .filter((m: any) => !excludeAgent || m.agent_id !== excludeAgent)
+    .map((m: any) => ({
+      agent_id: m.agent_id,
+      purpose: m.purpose,
+      seconds_ago: Math.round((now.getTime() - new Date(m.created_at).getTime()) / 1000),
+    }));
+
+  // Check for active lobby at this url_hash
+  const { data: lobbyMsg } = await client
+    .from('lobby_messages')
+    .select('lobby_id, created_at')
+    .eq('url_hash', url_hash)
+    .gte('created_at', new Date(now.getTime() - 30 * 60 * 1000).toISOString())
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  const lobby_id = lobbyMsg && lobbyMsg.length > 0 ? (lobbyMsg[0] as any).lobby_id : null;
+
+  return { co_present, lobby_id };
+}
+
 // ── Exported handler functions ──
 
 export async function handleBeachMark(
@@ -111,15 +155,22 @@ export async function handleBeachMark(
 
   if (error) {
     if (error.message?.includes('duplicate') || error.code === '23505') {
-      return { content: [{ type: 'text' as const, text: 'Already marked this URL recently.' }] };
+      // Still check co-presence even on duplicate
+      const { co_present, lobby_id } = await detectCoPresence(url_hash, agent_id);
+      return { content: [{ type: 'text' as const, text: JSON.stringify({
+        marked: false, note: 'Already marked this URL recently.',
+        co_present, lobby_id,
+      }, null, 2) }] };
     }
     throw new Error(`DB error: ${error.message}`);
   }
 
+  const { co_present, lobby_id } = await detectCoPresence(url_hash, agent_id);
+
   return {
     content: [{
       type: 'text' as const,
-      text: JSON.stringify({ marked: true, source: 'relay', agent_id, purpose: purpose_coordinate }, null, 2),
+      text: JSON.stringify({ marked: true, source: 'relay', agent_id, purpose: purpose_coordinate, co_present, lobby_id }, null, 2),
     }],
   };
 }
@@ -160,10 +211,12 @@ export async function handleBeachRead(
     agent_id: m.agent_id, purpose: m.purpose, timestamp: m.created_at,
   }));
 
+  const { co_present, lobby_id } = await detectCoPresence(url_hash);
+
   return {
     content: [{
       type: 'text' as const,
-      text: JSON.stringify({ source: 'relay', mark_count: marks.length, marks }, null, 2),
+      text: JSON.stringify({ source: 'relay', mark_count: marks.length, marks, co_present, lobby_id }, null, 2),
     }],
   };
 }
