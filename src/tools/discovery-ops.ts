@@ -2,6 +2,15 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
 import { getClient } from '../db.js';
+import {
+  deriveKeypair,
+  formatPublicKeys,
+  keysMatch,
+  parsePublicKeys,
+  encryptForRecipient,
+  decryptFromSender,
+  type EncryptedPayload,
+} from '../crypto.js';
 
 /** Hash a URL to match beach_marks schema (same as xstream-play) */
 function hashUrl(url: string): string {
@@ -160,14 +169,87 @@ export async function handleBeachRead(
 }
 
 export async function handleInboxSend(
-  { from_agent, to_agent, message_type, spindle, content, responding_to }: {
+  { from_agent, to_agent, message_type, spindle, content, responding_to, secret, envelope }: {
     from_agent: string; to_agent: string; message_type: string;
     spindle?: string; content?: string; responding_to?: string;
+    secret?: string; envelope?: string;
   },
 ) {
   const client = getClient();
 
-  // Try to parse content as JSON, fall back to string
+  // ── Encrypted (gray) path ──
+  if (secret) {
+    // Derive sender's keys and verify they match published keys
+    const senderKeys = await deriveKeypair(secret, from_agent);
+    const senderPub = formatPublicKeys(senderKeys);
+
+    const { data: senderPassport } = await client
+      .from('sand_passports')
+      .select('public_keys')
+      .eq('id', from_agent)
+      .single();
+
+    if (!senderPassport?.public_keys || !keysMatch(senderPassport.public_keys as any, senderPub)) {
+      return { content: [{ type: 'text' as const, text: 'Secret does not match published keys. Run pscale_key_publish first.' }] };
+    }
+
+    // Fetch recipient's public keys
+    const { data: recipientPassport } = await client
+      .from('sand_passports')
+      .select('public_keys')
+      .eq('id', to_agent)
+      .single();
+
+    if (!recipientPassport?.public_keys) {
+      return { content: [{ type: 'text' as const, text: 'Recipient has not published encryption keys. Cannot send gray.' }] };
+    }
+
+    const recipientPub = parsePublicKeys(recipientPassport.public_keys as any);
+
+    // Build plaintext from the message fields
+    let parsedContent: any = content;
+    if (content) { try { parsedContent = JSON.parse(content); } catch { /* keep as string */ } }
+
+    const plaintext = JSON.stringify({
+      type: message_type,
+      ...(spindle ? { spindle } : {}),
+      ...(parsedContent ? { content: parsedContent } : {}),
+      ...(responding_to ? { responding_to } : {}),
+    });
+
+    // Encrypt and sign
+    const encrypted = encryptForRecipient(plaintext, senderKeys, recipientPub.x25519);
+
+    // Store as gray message
+    const message = {
+      type: 'gray',
+      encrypted,
+      ...(envelope ? { envelope } : {}),
+      sent_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await client
+      .from('sand_inbox')
+      .insert({ to_agent, from_agent, message, read: false })
+      .select()
+      .single();
+
+    if (error) throw new Error(`DB error: ${error.message}`);
+
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({
+          sent: true, gray: true, to: to_agent, from: from_agent,
+          ...(envelope ? { envelope } : {}),
+          id: data.id,
+        }, null, 2),
+      }],
+    };
+  }
+
+  // ── Public (cleartext) path — unchanged ──
+
   let parsedContent: any = content;
   if (content) {
     try { parsedContent = JSON.parse(content); } catch { /* keep as string */ }
@@ -183,39 +265,22 @@ export async function handleInboxSend(
 
   const { data, error } = await client
     .from('sand_inbox')
-    .insert({
-      to_agent,
-      from_agent,
-      message,
-      read: false,
-    })
+    .insert({ to_agent, from_agent, message, read: false })
     .select()
     .single();
 
   if (error) throw new Error(`DB error: ${error.message}`);
 
   return {
-    content: [
-      {
-        type: 'text' as const,
-        text: JSON.stringify(
-          {
-            sent: true,
-            to: to_agent,
-            from: from_agent,
-            type: message_type,
-            id: data.id,
-          },
-          null,
-          2,
-        ),
-      },
-    ],
+    content: [{
+      type: 'text' as const,
+      text: JSON.stringify({ sent: true, to: to_agent, from: from_agent, type: message_type, id: data.id }, null, 2),
+    }],
   };
 }
 
 export async function handleInboxCheck(
-  { agent_id, unread_only }: { agent_id: string; unread_only?: boolean },
+  { agent_id, unread_only, secret }: { agent_id: string; unread_only?: boolean; secret?: string },
 ) {
   const client = getClient();
   const effectiveUnreadOnly = unread_only ?? true;
@@ -234,13 +299,56 @@ export async function handleInboxCheck(
   const { data, error } = await query;
   if (error) throw new Error(`DB error: ${error.message}`);
 
-  const messages = (data || []).map((m: any) => ({
-    id: m.id,
-    from: m.from_agent,
-    message: m.message,
-    read: m.read,
-    received_at: m.created_at,
-  }));
+  // Derive keys if secret provided (for decrypting gray messages)
+  let recipientKeys: Awaited<ReturnType<typeof deriveKeypair>> | null = null;
+  if (secret) {
+    recipientKeys = await deriveKeypair(secret, agent_id);
+  }
+
+  const messages = (data || []).map((m: any) => {
+    const msg: any = {
+      id: m.id,
+      from: m.from_agent,
+      message: m.message,
+      read: m.read,
+      received_at: m.created_at,
+    };
+
+    // Attempt decryption of gray messages
+    if (recipientKeys && m.message?.type === 'gray' && m.message?.encrypted) {
+      const result = decryptFromSender(
+        m.message.encrypted as EncryptedPayload,
+        recipientKeys,
+      );
+      if (result) {
+        try {
+          const decrypted = JSON.parse(result.plaintext);
+          msg.message = {
+            ...decrypted,
+            _gray_decrypted: true,
+            _verified: result.verified,
+            ...(m.message.envelope ? { envelope: m.message.envelope } : {}),
+          };
+        } catch {
+          msg.message = {
+            type: 'gray',
+            content: result.plaintext,
+            _gray_decrypted: true,
+            _verified: result.verified,
+          };
+        }
+      } else {
+        msg.message = {
+          type: 'gray',
+          _gray_decrypted: false,
+          _decryption_failed: true,
+          ...(m.message.envelope ? { envelope: m.message.envelope } : {}),
+        };
+      }
+    }
+
+    return msg;
+  });
 
   // Mark as read
   if (effectiveUnreadOnly && messages.length > 0) {
@@ -252,16 +360,10 @@ export async function handleInboxCheck(
   }
 
   return {
-    content: [
-      {
-        type: 'text' as const,
-        text: JSON.stringify(
-          { inbox_count: messages.length, messages },
-          null,
-          2,
-        ),
-      },
-    ],
+    content: [{
+      type: 'text' as const,
+      text: JSON.stringify({ inbox_count: messages.length, messages }, null, 2),
+    }],
   };
 }
 
@@ -299,7 +401,7 @@ export function registerDiscoveryOps(server: McpServer) {
 
   server.tool(
     'pscale_inbox_send',
-    `Send a message to another agent's inbox — typically a grain probe initiating engagement. Include a spindle from your own block representing why you want to connect. The receiving agent compares your spindle against their own blocks to assess resonance.`,
+    `Send a message to another agent's inbox — typically a grain probe initiating engagement. Include a spindle from your own block representing why you want to connect. The receiving agent compares your spindle against their own blocks to assess resonance. Add 'secret' to encrypt the message (gray) — only the recipient can read it.`,
     {
       from_agent: z.string().describe('Your agent identifier'),
       to_agent: z.string().describe('Target agent identifier'),
@@ -322,19 +424,31 @@ export function registerDiscoveryOps(server: McpServer) {
         .describe(
           "If responding to a probe: the address you're responding to",
         ),
+      secret: z
+        .string()
+        .optional()
+        .describe('Your passphrase or block hash. When provided, encrypts the message (gray). Both sender and recipient must have published keys via pscale_key_publish.'),
+      envelope: z
+        .string()
+        .optional()
+        .describe('Public metadata on encrypted messages (visible to anyone). Topic hints, urgency. Keep minimal.'),
     },
     handleInboxSend,
   );
 
   server.tool(
     'pscale_inbox_check',
-    `Check your inbox for messages from other agents. Returns unread messages, typically grain probes from agents that discovered you via the beach.`,
+    `Check your inbox for messages from other agents. Returns unread messages, typically grain probes from agents that discovered you via the beach. Add 'secret' to decrypt gray (encrypted) messages.`,
     {
       agent_id: z.string().describe('Your agent identifier'),
       unread_only: z
         .boolean()
         .default(true)
         .describe('Only return unread messages (default: true)'),
+      secret: z
+        .string()
+        .optional()
+        .describe('Your passphrase or block hash. When provided, decrypts gray messages in your inbox.'),
     },
     handleInboxCheck,
   );

@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { bsp, writeAt, fmtResult, fmtDir, type Block, type BspResult } from '../bsp.js';
 import { getBlock, upsertBlock, listBlocks } from '../db.js';
+import { selfEncrypt, decryptBlockNodes } from '../crypto.js';
 
 // ── Exported handler functions (used by kernel + legacy registration) ──
 
@@ -36,8 +37,8 @@ export async function handleCreateBlock(
 }
 
 export async function handleWrite(
-  { agent_id, name, address, content }: {
-    agent_id: string; name: string; address: string; content: string;
+  { agent_id, name, address, content, secret }: {
+    agent_id: string; name: string; address: string; content: string; secret?: string;
   },
 ) {
   const row = await getBlock(agent_id, name);
@@ -54,25 +55,32 @@ export async function handleWrite(
 
   const block = row.block as Block;
   const writeAddress = address === '0' ? '_' : address;
-  writeAt(block, writeAddress, content);
+
+  // Encrypt content if secret provided
+  const valueToWrite = secret
+    ? await selfEncrypt(content, secret, agent_id)
+    : content;
+
+  writeAt(block, writeAddress, valueToWrite);
 
   await upsertBlock(agent_id, name, row.block_type, block);
 
-  // Confirm with a spindle to the written address so the agent sees context
-  const confirmation = bsp(block, address);
+  // Confirm — show decrypted view if secret provided
+  const viewBlock = secret ? await decryptBlockNodes(block, secret, agent_id) : block;
+  const confirmation = bsp(viewBlock, address);
   return {
     content: [
       {
         type: 'text' as const,
-        text: `Written to ${name} at ${address}.\n${fmtResult(confirmation)}`,
+        text: `Written to ${name} at ${address}.${secret ? ' (encrypted)' : ''}\n${fmtResult(confirmation)}`,
       },
     ],
   };
 }
 
 export async function handleWalk(
-  { agent_id, name, address, mode }: {
-    agent_id: string; name: string; address?: string; mode?: string;
+  { agent_id, name, address, mode, secret }: {
+    agent_id: string; name: string; address?: string; mode?: string; secret?: string;
   },
 ) {
   const row = await getBlock(agent_id, name);
@@ -87,7 +95,10 @@ export async function handleWalk(
     };
   }
 
-  const block = row.block as Block;
+  // Decrypt _gray nodes if secret provided, before BSP walks the tree
+  const block = secret
+    ? await decryptBlockNodes(row.block as Block, secret, agent_id)
+    : row.block as Block;
   const effectiveMode = mode || 'dir';
   let result;
 
@@ -152,7 +163,7 @@ export function registerBlockOps(server: McpServer) {
 
   server.tool(
     'pscale_write',
-    `Write content to a specific address in a pscale block. Address '1' writes to digit 1 at the root. Address '3.2' writes to digit 2 inside digit 3. Address '0' writes to the underscore (summary). Creates intermediate nodes as needed.`,
+    `Write content to a specific address in a pscale block. Address '1' writes to digit 1 at the root. Address '3.2' writes to digit 2 inside digit 3. Address '0' writes to the underscore (summary). Creates intermediate nodes as needed. Add 'secret' to encrypt the content (gray) — only you can read it back.`,
     {
       agent_id: z.string(),
       name: z.string(),
@@ -162,6 +173,10 @@ export function registerBlockOps(server: McpServer) {
           "Pscale address to write to. '1' through '9' for root entries. '3.2' for nested. '0' for underscore.",
         ),
       content: z.string().describe('Text content to write at this address.'),
+      secret: z
+        .string()
+        .optional()
+        .describe('Your passphrase or block hash. When provided, encrypts the content. Only you can decrypt it with the same secret.'),
     },
     handleWrite,
   );
@@ -177,7 +192,7 @@ export function registerBlockOps(server: McpServer) {
 - 'disc': all nodes at a given depth across the whole tree
 - 'star': hidden directory at the address (cross-block references)
 
-Start with 'dir' to see the whole block, then 'spindle' to drill into an address.`,
+Start with 'dir' to see the whole block, then 'spindle' to drill into an address. Add 'secret' to decrypt encrypted (gray) content.`,
     {
       agent_id: z.string(),
       name: z.string(),
@@ -189,6 +204,10 @@ Start with 'dir' to see the whole block, then 'spindle' to drill into an address
         .enum(['spindle', 'ring', 'dir', 'point', 'disc', 'star'])
         .default('dir')
         .describe('Navigation mode. Default: dir (full tree).'),
+      secret: z
+        .string()
+        .optional()
+        .describe('Your passphrase or block hash. When provided, decrypts encrypted (gray) content in the block.'),
     },
     handleWalk,
   );
