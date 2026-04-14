@@ -66,6 +66,8 @@ const httpServer = createHttpServer(async (req, res) => {
 
   const sessionId = req.headers['mcp-session-id'] as string | undefined;
 
+  console.log(`${req.method} /mcp | session: ${sessionId || 'none'} | known: ${sessionId ? transports.has(sessionId) : 'n/a'} | sessions: ${transports.size}`);
+
   // Existing session — handle directly
   if (sessionId && transports.has(sessionId)) {
     await transports.get(sessionId)!.handleRequest(req, res, body);
