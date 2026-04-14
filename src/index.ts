@@ -15,9 +15,10 @@ function createSession(): StreamableHTTPServerTransport {
   });
 
   transport.onclose = () => {
-    if (transport.sessionId) {
-      transports.delete(transport.sessionId);
-    }
+    console.log(`Transport onclose fired for session: ${transport.sessionId}`);
+    // Do NOT delete the session here — the SSE stream dropping doesn't mean
+    // the session is dead. The client may reconnect. Sessions are only
+    // removed on explicit DELETE or server restart.
   };
 
   const mcpServer = createServer();
