@@ -90,7 +90,7 @@ interface CoPresent {
 
 const PRESENCE_WINDOW_SECONDS = 120;
 
-async function detectCoPresence(url_hash: string, excludeAgent?: string): Promise<{ co_present: CoPresent[]; lobby_id: string | null }> {
+async function detectCoPresence(url_hash: string, excludeAgent?: string): Promise<{ co_present: CoPresent[]; pool_id: string | null }> {
   const client = getClient();
   const now = new Date();
 
@@ -112,22 +112,22 @@ async function detectCoPresence(url_hash: string, excludeAgent?: string): Promis
 
   // Check for active pool at this url_hash
   const { data: poolState } = await client
-    .from('lobby_state')
-    .select('lobby_id, ttl_days, created_at')
+    .from('pool_state')
+    .select('pool_id, ttl_days, created_at')
     .eq('url_hash', url_hash)
     .order('created_at', { ascending: false })
     .limit(1);
 
-  let lobby_id: string | null = null;
+  let pool_id: string | null = null;
   if (poolState && poolState.length > 0) {
     const pool = poolState[0] as any;
     const age = now.getTime() - new Date(pool.created_at).getTime();
     if (age <= pool.ttl_days * 24 * 60 * 60 * 1000) {
-      lobby_id = pool.lobby_id;
+      pool_id = pool.pool_id;
     }
   }
 
-  return { co_present, lobby_id };
+  return { co_present, pool_id };
 }
 
 // ── Exported handler functions ──
@@ -162,21 +162,21 @@ export async function handleBeachMark(
   if (error) {
     if (error.message?.includes('duplicate') || error.code === '23505') {
       // Still check co-presence even on duplicate
-      const { co_present, lobby_id } = await detectCoPresence(url_hash, agent_id);
+      const { co_present, pool_id } = await detectCoPresence(url_hash, agent_id);
       return { content: [{ type: 'text' as const, text: JSON.stringify({
         marked: false, note: 'Already marked this URL recently.',
-        co_present, lobby_id,
+        co_present, pool_id,
       }, null, 2) }] };
     }
     throw new Error(`DB error: ${error.message}`);
   }
 
-  const { co_present, lobby_id } = await detectCoPresence(url_hash, agent_id);
+  const { co_present, pool_id } = await detectCoPresence(url_hash, agent_id);
 
   return {
     content: [{
       type: 'text' as const,
-      text: JSON.stringify({ marked: true, source: 'relay', agent_id, purpose: purpose_coordinate, co_present, lobby_id }, null, 2),
+      text: JSON.stringify({ marked: true, source: 'relay', agent_id, purpose: purpose_coordinate, co_present, pool_id }, null, 2),
     }],
   };
 }
@@ -217,12 +217,12 @@ export async function handleBeachRead(
     agent_id: m.agent_id, purpose: m.purpose, timestamp: m.created_at,
   }));
 
-  const { co_present, lobby_id } = await detectCoPresence(url_hash);
+  const { co_present, pool_id } = await detectCoPresence(url_hash);
 
   return {
     content: [{
       type: 'text' as const,
-      text: JSON.stringify({ source: 'relay', mark_count: marks.length, marks, co_present, lobby_id }, null, 2),
+      text: JSON.stringify({ source: 'relay', mark_count: marks.length, marks, co_present, pool_id }, null, 2),
     }],
   };
 }

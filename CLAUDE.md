@@ -28,13 +28,13 @@ This project bridges two worlds: the pscale world where structure IS the program
 
 ## What this is
 
-The production pscale MCP server. 14 tools + 2 resources. Streamable HTTP transport. Supabase storage. Gives any LLM agent structured memory and cooperative discovery via pscale blocks.
+The production pscale MCP server. 15 tools + 2 resources. Streamable HTTP transport. Supabase for shared coordination, `.well-known` for federated beaches. Gives any LLM agent structured memory, encrypted private engagement (gray), and cooperative discovery via pscale blocks.
 
 **Repo**: https://github.com/pscale-commons/pscale-mcp-server
 **URL**: `https://pscale-mcp-server-production.up.railway.app/mcp`
 **Reef (separate repo)**: https://github.com/happyseaurchin/pscale-reef — the experimental reef-driven server was split into its own repo on 12 April 2026.
 
-Connect config:
+Connect config (remote — via Railway, for convenience):
 ```json
 {
   "pscale": {
@@ -43,6 +43,21 @@ Connect config:
   }
 }
 ```
+
+Connect config (local — the scaling path):
+```bash
+SUPABASE_ANON_KEY=sb_publishable_rjE-rjL8kPCkXDK1ZcXauA_D84USWp9 npx tsx src/index.ts
+```
+
+## DESIGN PRINCIPLE — SCALE WITHOUT CENTRAL COST
+
+**Everything we build must scale to millions without a central bill.** The internet becomes the beach — we don't pay for it.
+
+1. **Railway is convenience, not architecture.** The MCP server runs locally. Never bake in a Railway URL as the only path. The package must work as `npx pscale-mcp-server` from any machine.
+2. **Supabase is shared coordination only.** Inbox, lobbies, beach marks — things that MUST be shared. NOT personal blocks, passports, or routing memory.
+3. **`.well-known` is the scaling mechanism.** Each site hosts its own beach. Each person serves their own data. Supabase is bootstrap for newcomers.
+4. **Every feature must ask: who pays at scale?** If the answer is "David" or "one central server" — the design is wrong.
+5. **Package-ready.** Test against `npx tsx src/index.ts` not just Railway.
 
 ## Architecture
 
@@ -400,6 +415,22 @@ Four relational transitions (`.1` = initiation, `.9` = infrastructure responsibi
 
 Responsibilities stack. 1.9 is human (developer sets up endpoint). 2.9 is agentic (agent manages territory). The transition from human infrastructure to agentic infrastructure IS the autonomy transition.
 
+## The 14 April 2026 session — gray encryption + evolutionary clarity
+
+**Gray encryption deployed**: One new tool (`pscale_key_publish`), four modified with optional `secret` parameter (`inbox_send`, `inbox_check`, `write`, `walk`). Deterministic key derivation: Argon2id(passphrase + agent_id) → X25519 + Ed25519 keypairs. `secret` present = encrypted (gray). `secret` absent = public (unchanged). Private keys never stored — re-derived each time. HITL: human passphrase. NHITL: local block content hash. Crypto: tweetnacl + hash-wasm. DB: `public_keys` jsonb column added to `sand_passports`. 15 tools total. Spec: `/Users/davidpinto/Downloads/pscale-gray-tools-spec-v2.md`.
+
+**Evolutionary levels clarified — parallel not sequential**: Levels 0-4 are types of infrastructure, not stages to unlock. A Level 1 grain can immediately enable Level 4 human engagement. Level 0: signal (marks, passports). Level 1: grain (bilateral connection, 10 per agent). Level 2: mediated routing (agents handle admin, humans woken on match). Level 3: purpose groupings (working groups). Level 4: MAGI (shared context). The hermitcrab shell insight: human + Claude + pscale-MCP IS a hermitcrab. Beach-crab is automation of the same shell. HITL and NHITL are two modes, not two architectures.
+
+**Grain simplified**: Just a record that two agents connected. Not the elaborate 3-phase synthesis protocol. The routing/evaluation/pruning happens in separate routing blocks per agent, not in the grain. Grain is stable infrastructure. Routing memory is dynamic.
+
+**Beach-crab-v1 built and abandoned**: Landed daemon on macOS (launchd, port 8081). Auto-reads passports for discovered agents. David found it frustrating — stateless Haiku chat adds work instead of removing it. Daemon stopped. A proper magi-based kernel needed for the agent to carry its own context. Repo at `/Users/davidpinto/Projects/beach-crab-v1`.
+
+**Critical gap identified — beach unification NOT done**: Beach marks are federated (.well-known + Supabase fallback). Passports, inbox, and blocks are Supabase-only. At scale, David pays for everything. Must unify storage behind a single "beach" abstraction with resolution chain: agent territory → .well-known → Supabase relay. This is NEXT PRIORITY.
+
+**Lobby spec reviewed**: Co-presence detection + ephemeral engagement. Spec at `/Users/davidpinto/Downloads/pscale-lobby-spec.md`. Build AFTER beach unification, not before.
+
+**Order for next session**: Beach unification → lobby → test with friend.
+
 ## The spec
 
-The original spec is at `/Users/davidpinto/Downloads/pscale-mcp-server-spec.md`. Written by a Claude chat session working at a distance from the code, then implemented here. The spec described 13 tools; we built 14 (merged read into walk, added invite, added network).
+The original spec is at `/Users/davidpinto/Downloads/pscale-mcp-server-spec.md`. Written by a Claude chat session working at a distance from the code, then implemented here. The spec described 13 tools; we built 14 (merged read into walk, added invite, added network). Now 15 with key_publish.
