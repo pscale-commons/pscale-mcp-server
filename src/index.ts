@@ -75,7 +75,12 @@ const httpServer = createHttpServer(async (req, res) => {
   }
 
   // POST without session or with unknown session — create new session
+  // Strip any stale session ID so the new transport doesn't reject it
   if (req.method === 'POST') {
+    if (sessionId) {
+      console.log(`Stripping stale session ID ${sessionId} from POST`);
+      delete req.headers['mcp-session-id'];
+    }
     const transport = createSession();
     await transport.handleRequest(req, res, body);
     if (transport.sessionId) {
@@ -84,16 +89,14 @@ const httpServer = createHttpServer(async (req, res) => {
     return;
   }
 
-  // GET (SSE) with unknown/missing session — create session and handle
-  // mcp-remote opens SSE after init. If the server restarted and lost
-  // the session, we create a fresh one so mcp-remote stays connected.
+  // GET (SSE) with unknown/missing session — reject, client must reinitialize
   if (req.method === 'GET') {
-    const transport = createSession();
-    // Init the transport so it has a session
-    await transport.handleRequest(req, res, body);
-    if (transport.sessionId) {
-      transports.set(transport.sessionId, transport);
-    }
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      jsonrpc: '2.0',
+      error: { code: -32000, message: 'Unknown or expired session. Send a POST initialize request first.' },
+      id: null,
+    }));
     return;
   }
 
