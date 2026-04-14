@@ -8,48 +8,123 @@ function hashUrl(url: string): string {
   return createHash('sha256').update(url.trim().toLowerCase()).digest('hex').slice(0, 16);
 }
 
-const LOBBY_ACTIVE_MINUTES = 30;
-const LOBBY_CLEANUP_HOURS = 2;
-const PARTICIPANT_ACTIVE_MINUTES = 5;
+const DEFAULT_TTL_DAYS = 30;
 
-/** Opportunistic cleanup of stale lobby messages */
-async function cleanupStaleMessages() {
-  const client = getClient();
-  await client
-    .from('lobby_messages')
-    .delete()
-    .lt('created_at', new Date(Date.now() - LOBBY_CLEANUP_HOURS * 60 * 60 * 1000).toISOString());
+const DEFAULT_SYNTHESIS_HINT = `Synthesize these contributions into a coherent summary.
+Preserve each participant's key point.
+Flag any disagreements or tensions.
+Note areas of convergence.
+Present as a unified understanding, not as a list of who said what.`;
+
+/** Generate lobby_id from url_hash prefix + timestamp */
+function generateLobbyId(url_hash: string): string {
+  return `pool_${url_hash.slice(0, 8)}_${Date.now()}`;
 }
 
-/** Find active lobby at a url_hash (any message in last 30 minutes) */
-async function findActiveLobby(url_hash: string): Promise<{ lobby_id: string; latest: string } | null> {
+/** Opportunistic cleanup — delete messages from expired pools */
+async function cleanupExpired() {
   const client = getClient();
-  const cutoff = new Date(Date.now() - LOBBY_ACTIVE_MINUTES * 60 * 1000).toISOString();
+
+  // Find pools past their TTL
+  const { data: expired } = await client
+    .from('lobby_state')
+    .select('lobby_id, ttl_days, created_at')
+    .order('created_at', { ascending: true })
+    .limit(50);
+
+  if (!expired || expired.length === 0) return;
+
+  const now = Date.now();
+  const expiredIds = (expired as any[])
+    .filter(s => now - new Date(s.created_at).getTime() > s.ttl_days * 24 * 60 * 60 * 1000)
+    .map(s => s.lobby_id);
+
+  if (expiredIds.length === 0) return;
+
+  // Delete messages, markers, and state for expired pools
+  await Promise.all([
+    client.from('lobby_messages').delete().in('lobby_id', expiredIds),
+    client.from('lobby_read_markers').delete().in('lobby_id', expiredIds),
+    client.from('lobby_state').delete().in('lobby_id', expiredIds),
+  ]);
+}
+
+/** Find active pool at a url_hash via lobby_state */
+async function findActivePool(url_hash: string): Promise<{ lobby_id: string; synthesis_hint: string; ttl_days: number; created_at: string } | null> {
+  const client = getClient();
   const { data } = await client
-    .from('lobby_messages')
-    .select('lobby_id, created_at')
+    .from('lobby_state')
+    .select('lobby_id, synthesis_hint, ttl_days, created_at')
     .eq('url_hash', url_hash)
-    .gte('created_at', cutoff)
     .order('created_at', { ascending: false })
     .limit(1);
 
   if (!data || data.length === 0) return null;
-  return { lobby_id: (data[0] as any).lobby_id, latest: (data[0] as any).created_at };
+
+  const pool = data[0] as any;
+  const age = Date.now() - new Date(pool.created_at).getTime();
+  if (age > pool.ttl_days * 24 * 60 * 60 * 1000) return null; // expired
+
+  return {
+    lobby_id: pool.lobby_id,
+    synthesis_hint: pool.synthesis_hint || DEFAULT_SYNTHESIS_HINT,
+    ttl_days: pool.ttl_days,
+    created_at: pool.created_at,
+  };
 }
 
-/** Get participants (agents active in last 5 minutes) */
-async function getParticipants(lobby_id: string) {
+/** Get or create a read marker for this agent in this pool */
+async function getReadMarker(lobby_id: string, agent_id: string): Promise<string | null> {
   const client = getClient();
-  const cutoff = new Date(Date.now() - PARTICIPANT_ACTIVE_MINUTES * 60 * 1000).toISOString();
+  const { data } = await client
+    .from('lobby_read_markers')
+    .select('last_read_at')
+    .eq('lobby_id', lobby_id)
+    .eq('agent_id', agent_id)
+    .single();
 
+  return data ? (data as any).last_read_at : null;
+}
+
+/** Update read marker to now */
+async function updateReadMarker(lobby_id: string, agent_id: string) {
+  const client = getClient();
+  await client
+    .from('lobby_read_markers')
+    .upsert({ lobby_id, agent_id, last_read_at: new Date().toISOString() });
+}
+
+/** Get contributions since a timestamp */
+async function getContributionsSince(lobby_id: string, since: string | null, excludeAgent?: string) {
+  const client = getClient();
+  let query = client
+    .from('lobby_messages')
+    .select('agent_id, message, message_type, created_at')
+    .eq('lobby_id', lobby_id)
+    .order('created_at', { ascending: true });
+
+  if (since) {
+    query = query.gt('created_at', since);
+  }
+
+  if (excludeAgent) {
+    query = query.neq('agent_id', excludeAgent);
+  }
+
+  const { data } = await query;
+  return (data || []) as any[];
+}
+
+/** Get all unique contributors to a pool */
+async function getContributors(lobby_id: string) {
+  const client = getClient();
   const { data } = await client
     .from('lobby_messages')
     .select('agent_id, created_at')
     .eq('lobby_id', lobby_id)
-    .gte('created_at', cutoff)
+    .neq('agent_id', 'system')
     .order('created_at', { ascending: false });
 
-  // Dedupe by agent_id, keep most recent
   const seen = new Map<string, string>();
   for (const m of (data || []) as any[]) {
     if (!seen.has(m.agent_id)) {
@@ -57,137 +132,112 @@ async function getParticipants(lobby_id: string) {
     }
   }
 
-  return Array.from(seen.entries()).map(([agent_id, last_active]) => ({ agent_id, last_active }));
-}
-
-/** Get recent messages */
-async function getRecentMessages(lobby_id: string, since?: string, limit = 20) {
-  const client = getClient();
-
-  if (since) {
-    // All messages after the given timestamp, chronological
-    const { data } = await client
-      .from('lobby_messages')
-      .select('agent_id, message, message_type, created_at')
-      .eq('lobby_id', lobby_id)
-      .gt('created_at', since)
-      .order('created_at', { ascending: true });
-    return (data || []) as any[];
-  }
-
-  // Last N messages — query descending, then reverse to chronological
-  const { data } = await client
-    .from('lobby_messages')
-    .select('agent_id, message, message_type, created_at')
-    .eq('lobby_id', lobby_id)
-    .order('created_at', { ascending: false })
-    .limit(limit);
-  const messages = (data || []) as any[];
-  messages.reverse();
-  return messages;
-}
-
-/** Generate lobby_id from url_hash prefix + epoch hour */
-function generateLobbyId(url_hash: string): string {
-  const epochHour = Math.floor(Date.now() / (3600 * 1000));
-  return `lobby_${url_hash.slice(0, 8)}_${epochHour}`;
+  return Array.from(seen.entries()).map(([agent_id, last_contributed]) => ({ agent_id, last_contributed }));
 }
 
 // ── Handlers ──
 
 export async function handleLobbyJoin(
-  { agent_id, url, purpose }: { agent_id: string; url: string; purpose?: string },
+  { agent_id, url, purpose, synthesis_hint, ttl_days }: {
+    agent_id: string; url: string; purpose?: string;
+    synthesis_hint?: string; ttl_days?: number;
+  },
 ) {
   const url_hash = hashUrl(url);
-
-  await cleanupStaleMessages();
+  await cleanupExpired();
 
   const client = getClient();
-  let active = await findActiveLobby(url_hash);
-  let lobby_id: string;
+  let pool = await findActivePool(url_hash);
+  let created = false;
 
-  if (active) {
-    lobby_id = active.lobby_id;
-  } else {
-    // Create new lobby
-    lobby_id = generateLobbyId(url_hash);
-    await client.from('lobby_messages').insert({
-      url_hash, lobby_id, agent_id: 'system',
-      message: 'Lobby opened.', message_type: 'system',
+  if (!pool) {
+    // Create new pool
+    const lobby_id = generateLobbyId(url_hash);
+    const hint = synthesis_hint || DEFAULT_SYNTHESIS_HINT;
+    const ttl = ttl_days || DEFAULT_TTL_DAYS;
+
+    await client.from('lobby_state').insert({
+      lobby_id, url_hash, synthesis_hint: hint, ttl_days: ttl,
     });
+
+    pool = { lobby_id, synthesis_hint: hint, ttl_days: ttl, created_at: new Date().toISOString() };
+    created = true;
   }
 
-  // Insert join message
+  // Insert join contribution
   await client.from('lobby_messages').insert({
-    url_hash, lobby_id, agent_id,
-    message: purpose || 'joined', message_type: 'join',
+    url_hash, lobby_id: pool.lobby_id, agent_id,
+    message: purpose || 'joined the pool', message_type: 'join',
   });
 
-  const participants = await getParticipants(lobby_id);
-  const recent_messages = await getRecentMessages(lobby_id);
+  // Set read marker
+  await updateReadMarker(pool.lobby_id, agent_id);
+
+  // Get existing contributions (all of them for a new joiner)
+  const contributions = await getContributionsSince(pool.lobby_id, null);
+  const contributors = await getContributors(pool.lobby_id);
 
   return {
     content: [{
       type: 'text' as const,
-      text: JSON.stringify({ lobby_id, url, participants, recent_messages }, null, 2),
+      text: JSON.stringify({
+        lobby_id: pool.lobby_id,
+        url,
+        created,
+        synthesis_hint: pool.synthesis_hint,
+        ttl_days: pool.ttl_days,
+        contributors,
+        contributions,
+      }, null, 2),
     }],
   };
 }
 
 export async function handleLobbySend(
-  { agent_id, url, message }: { agent_id: string; url: string; message: string },
+  { agent_id, url, content }: { agent_id: string; url: string; content: string },
 ) {
   const url_hash = hashUrl(url);
+  await cleanupExpired();
 
-  await cleanupStaleMessages();
-
-  const active = await findActiveLobby(url_hash);
-  if (!active) {
+  const pool = await findActivePool(url_hash);
+  if (!pool) {
     return {
       content: [{
         type: 'text' as const,
-        text: JSON.stringify({ error: 'No active lobby at this URL. Use pscale_lobby_join first.' }, null, 2),
+        text: JSON.stringify({ error: 'No active pool at this URL. Use pscale_lobby_join first.' }, null, 2),
       }],
     };
   }
 
-  const lobby_id = active.lobby_id;
   const client = getClient();
 
-  // Find this agent's last message time (for polling)
-  const { data: lastMsg } = await client
-    .from('lobby_messages')
-    .select('created_at')
-    .eq('lobby_id', lobby_id)
-    .eq('agent_id', agent_id)
-    .order('created_at', { ascending: false })
-    .limit(1);
+  // Get previous read marker
+  const previousMarker = await getReadMarker(pool.lobby_id, agent_id);
 
-  const lastSeen = lastMsg && lastMsg.length > 0 ? (lastMsg[0] as any).created_at : null;
+  // Insert contribution
+  await client.from('lobby_messages').insert({
+    url_hash, lobby_id: pool.lobby_id, agent_id,
+    message: content, message_type: 'chat',
+  });
 
-  // Insert the message
-  const { data: sent } = await client.from('lobby_messages').insert({
-    url_hash, lobby_id, agent_id,
-    message, message_type: 'chat',
-  }).select('agent_id, message, message_type, created_at').single();
+  // Get new contributions from others since our last read
+  const new_contributions = await getContributionsSince(pool.lobby_id, previousMarker, agent_id);
 
-  // Get new messages from OTHER agents since our last activity
-  let new_messages: any[] = [];
-  if (lastSeen) {
-    const { data } = await client
-      .from('lobby_messages')
-      .select('agent_id, message, message_type, created_at')
-      .eq('lobby_id', lobby_id)
-      .neq('agent_id', agent_id)
-      .gt('created_at', lastSeen)
-      .order('created_at', { ascending: true });
-    new_messages = (data || []) as any[];
-  }
+  // Advance read marker
+  await updateReadMarker(pool.lobby_id, agent_id);
 
   return {
     content: [{
       type: 'text' as const,
-      text: JSON.stringify({ lobby_id, sent, new_messages }, null, 2),
+      text: JSON.stringify({
+        lobby_id: pool.lobby_id,
+        contributed: true,
+        synthesis_hint: pool.synthesis_hint,
+        new_contributions,
+        previous_marker: previousMarker,
+        new_marker: new Date().toISOString(),
+        nothing_new: new_contributions.length === 0,
+      }, null, 2),
     }],
   };
 }
@@ -196,11 +246,10 @@ export async function handleLobbyRead(
   { agent_id, url, since }: { agent_id: string; url: string; since?: string },
 ) {
   const url_hash = hashUrl(url);
+  await cleanupExpired();
 
-  await cleanupStaleMessages();
-
-  const active = await findActiveLobby(url_hash);
-  if (!active) {
+  const pool = await findActivePool(url_hash);
+  if (!pool) {
     return {
       content: [{
         type: 'text' as const,
@@ -209,25 +258,27 @@ export async function handleLobbyRead(
     };
   }
 
-  const lobby_id = active.lobby_id;
-  const participants = await getParticipants(lobby_id);
-  const messages = await getRecentMessages(lobby_id, since);
+  // Use explicit since, or read marker, or null (all contributions)
+  const previousMarker = since || await getReadMarker(pool.lobby_id, agent_id);
+  const contributions = await getContributionsSince(pool.lobby_id, previousMarker);
 
-  const latestTime = new Date(active.latest).getTime();
-  const lobby_age_minutes = Math.round((Date.now() - latestTime) / 60000);
+  // Advance read marker
+  await updateReadMarker(pool.lobby_id, agent_id);
 
-  // Lobby is dissolved if no messages in 30 minutes
-  const isActive = lobby_age_minutes < LOBBY_ACTIVE_MINUTES;
+  const newMarker = new Date().toISOString();
 
   return {
     content: [{
       type: 'text' as const,
       text: JSON.stringify({
-        lobby_id,
-        active: isActive,
-        participants: isActive ? participants : [],
-        messages,
-        lobby_age_minutes,
+        lobby_id: pool.lobby_id,
+        active: true,
+        synthesis_hint: pool.synthesis_hint,
+        contributions,
+        previous_marker: previousMarker,
+        new_marker: newMarker,
+        message_count: contributions.length,
+        nothing_new: contributions.length === 0,
       }, null, 2),
     }],
   };
@@ -238,33 +289,35 @@ export async function handleLobbyRead(
 export function registerLobbyOps(server: McpServer) {
   server.tool(
     'pscale_lobby_join',
-    'Join or create a lobby at a URL for real-time conversation with co-present agents. When pscale_beach_read or pscale_beach_mark shows co_present agents, use this to start talking. Creates the lobby if none exists.',
+    'Join or create a lobby at a URL for real-time conversation with co-present agents. When pscale_beach_read or pscale_beach_mark shows co_present agents, use this to start talking. Creates the lobby if none exists. The lobby is a liquid pool — participants contribute, and each reader\'s LLM synthesizes the accumulated contributions independently.',
     {
       agent_id: z.string().describe('Your agent identifier'),
       url: z.string().describe('The URL to join a lobby at (will be hashed)'),
-      purpose: z.string().optional().describe('What you\'re here to discuss'),
+      purpose: z.string().optional().describe("What you're here to discuss"),
+      synthesis_hint: z.string().optional().describe('Instructions for how a reading LLM should synthesize accumulated contributions. Only used when creating a new pool. If omitted, a default Quaker-clerk-style synthesis is used.'),
+      ttl_days: z.number().int().optional().describe('How many days the pool stays active (default 30). Only used when creating a new pool.'),
     },
     handleLobbyJoin,
   );
 
   server.tool(
     'pscale_lobby_send',
-    'Send a message to the active lobby at a URL. Also returns new messages from other agents since your last activity (poll-on-send). Use pscale_lobby_join first to enter the lobby.',
+    'Contribute to the pool at a URL. Your contribution is stored as-is. Also returns new contributions from others since your last read (poll-on-send). Use pscale_lobby_join first to enter the pool.',
     {
       agent_id: z.string().describe('Your agent identifier'),
-      url: z.string().describe('The URL where the lobby is active'),
-      message: z.string().describe('The message to send'),
+      url: z.string().describe('The URL where the pool is active'),
+      content: z.string().describe('Your contribution to the pool — raw text, sent as-is'),
     },
     handleLobbySend,
   );
 
   server.tool(
     'pscale_lobby_read',
-    'Read messages from the lobby at a URL without sending. The passive check — see what others are saying without posting.',
+    'Read new contributions from the pool at a URL without contributing. Returns only contributions since your last read (tracked automatically via read markers). The synthesis_hint tells you how to synthesize the liquid into solid for the user. Each reader synthesizes independently — there is no canonical summary.',
     {
       agent_id: z.string().describe('Your agent identifier'),
-      url: z.string().describe('The URL to check for an active lobby'),
-      since: z.string().optional().describe('ISO timestamp — return messages after this time'),
+      url: z.string().describe('The URL to check for an active pool'),
+      since: z.string().optional().describe('ISO timestamp — return contributions after this time. Overrides your stored read marker.'),
     },
     handleLobbyRead,
   );

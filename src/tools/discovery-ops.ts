@@ -110,16 +110,22 @@ async function detectCoPresence(url_hash: string, excludeAgent?: string): Promis
       seconds_ago: Math.round((now.getTime() - new Date(m.created_at).getTime()) / 1000),
     }));
 
-  // Check for active lobby at this url_hash
-  const { data: lobbyMsg } = await client
-    .from('lobby_messages')
-    .select('lobby_id, created_at')
+  // Check for active pool at this url_hash
+  const { data: poolState } = await client
+    .from('lobby_state')
+    .select('lobby_id, ttl_days, created_at')
     .eq('url_hash', url_hash)
-    .gte('created_at', new Date(now.getTime() - 30 * 60 * 1000).toISOString())
     .order('created_at', { ascending: false })
     .limit(1);
 
-  const lobby_id = lobbyMsg && lobbyMsg.length > 0 ? (lobbyMsg[0] as any).lobby_id : null;
+  let lobby_id: string | null = null;
+  if (poolState && poolState.length > 0) {
+    const pool = poolState[0] as any;
+    const age = now.getTime() - new Date(pool.created_at).getTime();
+    if (age <= pool.ttl_days * 24 * 60 * 60 * 1000) {
+      lobby_id = pool.lobby_id;
+    }
+  }
 
   return { co_present, lobby_id };
 }
