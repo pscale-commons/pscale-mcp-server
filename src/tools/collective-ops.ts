@@ -213,6 +213,167 @@ export async function resolveSedAddress(
   return { agent_id: sedAddress, declaration };
 }
 
+// ── Routing topology ──
+
+/**
+ * Compute routing targets from a sedimentary address.
+ * Pure digit manipulation — no LLM, no semantics.
+ *
+ * Algorithm (David's "lift" model):
+ *   1. Siblings: same group prefix, all other positions (1-9 except own last digit)
+ *   2. Lift: each sibling's last digit D → replace last digit of group prefix with D
+ *      → that's the target group. All occupied positions in that group are targets.
+ *   3. Cascade targets: for agents that received a lift, they enter their sub-tree
+ *      (address + 1-9). Returned so the next hop knows where to go.
+ *
+ * Example: address "34"
+ *   - Group prefix: "3", position: 4
+ *   - Siblings: 31,32,33,35,36,37,38,39
+ *   - Lift: 31(digit 1)→group "1"→11-19, 32(digit 2)→group "2"→21-29, etc.
+ *
+ * Example: address "16234"
+ *   - Group prefix: "1623", position: 4
+ *   - Siblings: 16231-16239 (except 16234)
+ *   - Lift: 16231→group "1621"→16211-16219, 16232→group "1622"→16221-16229, etc.
+ */
+export function computeRouteTargets(address: string): {
+  siblings: string[];
+  lifts: Array<{ via: string; target_group_prefix: string; targets: string[] }>;
+} {
+  const digits = address.replace(/\./g, '');
+
+  if (digits.length === 0) {
+    return { siblings: [], lifts: [] };
+  }
+
+  // Single-digit address (root group, positions 1-9): siblings only, no lift
+  if (digits.length === 1) {
+    const siblings: string[] = [];
+    for (let d = 1; d <= 9; d++) {
+      if (String(d) !== digits) siblings.push(String(d));
+    }
+    return { siblings, lifts: [] };
+  }
+
+  const groupPrefix = digits.slice(0, -1); // all but last digit
+  const ownDigit = digits.slice(-1);       // last digit
+
+  // Siblings: same group prefix, different last digit
+  const siblings: string[] = [];
+  for (let d = 1; d <= 9; d++) {
+    if (String(d) !== ownDigit) {
+      siblings.push(groupPrefix + String(d));
+    }
+  }
+
+  // Lift targets: each sibling's digit replaces the last digit of the group prefix
+  const lifts: Array<{ via: string; target_group_prefix: string; targets: string[] }> = [];
+
+  if (groupPrefix.length >= 1) {
+    const parentPrefix = groupPrefix.slice(0, -1); // group prefix's prefix
+    const groupDigit = groupPrefix.slice(-1);       // last digit of group prefix
+
+    for (let d = 1; d <= 9; d++) {
+      const siblingAddr = groupPrefix + String(d);
+      const targetGroupPrefix = parentPrefix + String(d);
+
+      // Skip if this maps back to our own group
+      if (String(d) === groupDigit) continue;
+
+      // Compute all positions in target group (1-9)
+      const targets: string[] = [];
+      for (let p = 1; p <= 9; p++) {
+        targets.push(targetGroupPrefix + String(p));
+      }
+
+      lifts.push({
+        via: siblingAddr,
+        target_group_prefix: targetGroupPrefix,
+        targets,
+      });
+    }
+  }
+
+  return { siblings, lifts };
+}
+
+/**
+ * Filter route targets to only those that actually exist in the collective block.
+ */
+function filterOccupied(block: Block, addresses: string[]): string[] {
+  return addresses.filter(addr => {
+    const digits = addr.replace(/\./g, '');
+    let node: any = block;
+    for (const d of digits) {
+      if (!node || typeof node !== 'object') return false;
+      node = node[d];
+    }
+    return node !== undefined;
+  });
+}
+
+export async function handleRoute(
+  { collective, address }: { collective: string; address: string },
+) {
+  const owner = sedOwner(collective);
+  const row = await getBlock(owner, collective);
+
+  if (!row) {
+    return {
+      content: [{
+        type: 'text' as const,
+        text: `Collective "${collective}" not found.`,
+      }],
+    };
+  }
+
+  const block = row.block as Block;
+  const { siblings, lifts } = computeRouteTargets(address);
+
+  // Filter to occupied positions
+  const occupiedSiblings = filterOccupied(block, siblings);
+
+  const occupiedLifts = lifts
+    .map(lift => ({
+      ...lift,
+      via: filterOccupied(block, [lift.via])[0],
+      targets: filterOccupied(block, lift.targets),
+    }))
+    .filter(lift => lift.via && lift.targets.length > 0);
+
+  // Format output
+  const lines: string[] = [];
+  lines.push(`Routing targets for ${address} in ${collective}:`);
+  lines.push('');
+
+  if (occupiedSiblings.length > 0) {
+    lines.push(`Siblings: ${occupiedSiblings.map(s => `sed:${collective}:${s}`).join(', ')}`);
+  } else {
+    lines.push('Siblings: none occupied');
+  }
+
+  if (occupiedLifts.length > 0) {
+    lines.push('');
+    lines.push('Lift targets (via sibling → group):');
+    for (const lift of occupiedLifts) {
+      const targetAddrs = lift.targets.map(t => `sed:${collective}:${t}`).join(', ');
+      lines.push(`  via sed:${collective}:${lift.via} → [${targetAddrs}]`);
+    }
+  } else if (lifts.length > 0) {
+    lines.push('');
+    lines.push('Lift targets: none occupied (network is still small)');
+  }
+
+  // Summary
+  const totalTargets = occupiedSiblings.length + occupiedLifts.reduce((n, l) => n + l.targets.length, 0);
+  lines.push('');
+  lines.push(`Total reachable: ${totalTargets} agents`);
+
+  return {
+    content: [{ type: 'text' as const, text: lines.join('\n') }],
+  };
+}
+
 // ── Registration ──
 
 export function registerCollectiveOps(server: McpServer) {
@@ -225,6 +386,16 @@ export function registerCollectiveOps(server: McpServer) {
       creator_passphrase: z.string().describe("Admin passphrase for the collective root. Sensitive — never repeat in conversation."),
     },
     handleCreateCollective,
+  );
+
+  server.tool(
+    'pscale_route',
+    `Compute routing targets from a sedimentary address. Returns siblings (same group) and lift targets (cross-group bridges). Pure arithmetic — no evaluation, no semantics. Use this to know WHO you can forward to, then use your own judgement to decide which targets are relevant for a given probe.`,
+    {
+      collective: z.string().describe("Name of the collective"),
+      address: z.string().describe("Your sedimentary address (e.g. '3', '34', '16234')"),
+    },
+    handleRoute,
   );
 
   server.tool(
