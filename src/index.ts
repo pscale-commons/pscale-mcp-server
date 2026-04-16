@@ -1,8 +1,13 @@
 import { createServer as createHttpServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { createServer } from './server.js';
 import { handleBeach, handleLifeguard, handleSuccess, handleCheckout, handleWebhook } from './routes/payment.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
@@ -43,6 +48,19 @@ const httpServer = createHttpServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://localhost:${PORT}`);
 
   // ── Payment / landing routes (before MCP) ──
+  // ── Static assets ──
+  if (url.pathname === '/widget.js' && req.method === 'GET') {
+    try {
+      const js = readFileSync(join(__dirname, 'public', 'widget.js'), 'utf-8');
+      res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=300' });
+      res.end(js);
+    } catch {
+      res.writeHead(404);
+      res.end('Not found');
+    }
+    return;
+  }
+
   if (url.pathname === '/' && req.method === 'GET') {
     handleBeach(req, res);
     return;

@@ -982,6 +982,7 @@ async function load() {
 load();
 setInterval(load, CONFIG.refreshIntervalSec * 1000);
 </script>
+<script src="/widget.js"></script>
 </body>
 </html>`;
 }
