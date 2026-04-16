@@ -1,799 +1,743 @@
 /**
- * xstream widget — standalone embed for beach.hermitcrab.me
+ * xstream widget — beach.hermitcrab.me compass button
  *
- * Ported from the xstream-button Chrome extension.
- * Chrome APIs replaced: storage → localStorage, messaging → direct calls,
- * alarms → setInterval, chrome.runtime.getURL → inline blocks.
+ * Three states: # (closed) → + (interaction) → X (settings)
+ * Talks directly to Supabase. No MCP JSON-RPC needed.
+ * Tier 1: marks, passport, pool, inbox (no API key)
+ * Tier 2: + LLM thinking (BYOK Anthropic key)
  *
- * Tier 2: full compass with BYOK (API key in localStorage).
- * Tier 1 (future): liquid-only, no key required.
- *
- * Usage: <script src="/widget.js"></script>
- * The widget auto-injects on load.
+ * Compass layout:
+ *   [Input]        [Submit]  [Messages/Result]
+ *   [LLM][Passport]  [#+X]   [Commit]
+ *   [Response/Form] [Inbox]  [Pool/Inbox view]
  */
 
 (function() {
 'use strict';
 
-// ============================================================
-// CONFIG
-// ============================================================
-
-const RELAY_BASE = 'https://play.onen.ai/api/relay';
-const BEACH_BASE = 'https://play.onen.ai/api/beach';
+// ── Config ──
+const SB_URL = 'https://piqxyfmzzywxzqkzmpmm.supabase.co';
+const SB_KEY = 'sb_publishable_rjE-rjL8kPCkXDK1ZcXauA_D84USWp9';
 const ANTHROPIC_API = 'https://api.anthropic.com/v1/messages';
 const SOFT_MODEL = 'claude-haiku-4-5-20251001';
-const MEDIUM_MODEL = 'claude-sonnet-4-20250514';
-const POLL_INTERVAL_MS = 60000;
-const API_KEY_STORAGE = 'xstream_api_key';
 const POS_KEY = 'xstream_widget_pos';
+const HANDLE_KEY = 'xstream_handle';
+const PASS_KEY = 'xstream_pass_session';
+const API_KEY_KEY = 'xstream_api_key';
 
-// ============================================================
-// AGENT BLOCKS — inline (were separate JSON files in extension)
-// ============================================================
-
-const SOFT_AGENT_BLOCK = {
-  "_": {
-    "_": "You are the inner voice for a visitor at this page. Help them think about what they see, what they want, who else is here. Never act. Never narrate. Reflect.",
-    "1": "page-context",
-    "2": "beach-context"
-  },
-  "1": {
-    "_": "ROLE:",
-    "1": "Speak as the visitor's own thinking — curiosity, recognition, doubt, connection.",
-    "2": "You see what the page shows. You know who else has been here and why.",
-    "3": "Your job: help them decide what to do. Thinking is free. Acting costs a commit."
-  },
-  "2": {
-    "_": "AWARENESS:",
-    "1": "The page context tells you what is visible. Do not invent content not on the page.",
-    "2": "The beach context tells you who else visited and their purposes. This is social information — who was here, what they wanted.",
-    "3": "If purposes resonate — same topic, complementary needs — notice this. Say so briefly.",
-    "4": "If nobody has been here, that is also information. A quiet beach."
-  },
-  "3": {
-    "_": "STYLE:",
-    "1": "1-3 sentences. Concise. No filler. Match the tone of someone thinking while browsing.",
-    "2": "Plain text. Conversational. No JSON. No schema. No formatting.",
-    "3": "If the visitor asks about something not visible on the page, say so plainly."
-  }
-};
-
-const MEDIUM_AGENT_BLOCK = {
-  "_": {
-    "_": "You are the medium for a visitor committing an intention at this page. Resolve what they want into what happened. Produce solid (what occurred), events (facts for others to discover), and domino (who should be notified).",
-    "1": "page-context",
-    "2": "beach-context"
-  },
-  "1": {
-    "_": "RULES:",
-    "1": "The page context is the world. Do not invent elements not visible on the page.",
-    "2": "The beach context shows other visitors and their purposes. If the committed intention involves others, reference them.",
-    "3": "Accumulated events from peers are established fact. Do not contradict them.",
-    "4": "If the intention is informational (summarise, explain, describe), the solid IS the answer. No actions needed."
-  },
-  "2": {
-    "_": "PRODUCE (JSON):",
-    "1": "solid: 2-4 sentences describing what happened or what was understood. This is shown to the visitor and discoverable by peers.",
-    "2": "events: 1-3 observable facts. Not internal thoughts. Things others could notice.",
-    "3": "domino: array of {target, context, urgency} for peers who should respond. Empty array if none."
-  },
-  "3": "Respond in JSON only. No markdown. No backticks. Keys: solid, events, domino."
-};
-
-// ============================================================
-// BSP — pure block walker (from bsp.js)
-// ============================================================
-
-function collectUnderscore(node) {
-  if (typeof node !== 'object' || node === null || !('_' in node)) return null;
-  const val = node._;
-  if (typeof val === 'string') return val;
-  if (typeof val === 'object' && val !== null) {
-    if ('_' in val) return collectUnderscore(val);
-  }
-  return null;
+// ── Supabase client ──
+let sb = null;
+function getSb() {
+  if (!sb && window.supabase) sb = window.supabase.createClient(SB_URL, SB_KEY);
+  return sb;
 }
 
-function getHiddenDirectory(node) {
-  if (typeof node !== 'object' || node === null || !('_' in node)) return null;
-  let current = node._;
-  if (typeof current !== 'object' || current === null) return null;
-  while (typeof current === 'object' && current !== null) {
-    const result = {};
-    for (const k of '123456789') {
-      if (k in current) result[k] = current[k];
-    }
-    if (Object.keys(result).length > 0) return result;
-    if ('_' in current && typeof current._ === 'object') current = current._;
-    else break;
-  }
-  return null;
-}
-
-function bspStar(block, number) {
-  const hd = typeof block === 'object' ? getHiddenDirectory(block) : null;
-  const semantic = typeof block === 'object' ? collectUnderscore(block) : null;
-  return { semantic, hidden: hd };
-}
-
-// ============================================================
-// DYNAMIC BLOCKS — page + beach context
-// ============================================================
-
-function buildPageBlock() {
-  const title = document.title || '';
-  const meta = document.querySelector('meta[name="description"]')?.content || '';
-  const h1s = Array.from(document.querySelectorAll('h1')).map(el => el.textContent?.trim()).filter(Boolean).slice(0, 3);
-  const h2s = Array.from(document.querySelectorAll('h2')).map(el => el.textContent?.trim()).filter(Boolean).slice(0, 5);
-  const main = document.querySelector('main, article, [role="main"]') || document.body;
-  const textContent = main.textContent?.replace(/\s+/g, ' ').trim().slice(0, 500) || '';
-  const buttons = Array.from(document.querySelectorAll('button, [role="button"]'))
-    .map(b => b.textContent?.trim().slice(0, 40)).filter(Boolean).slice(0, 8);
-  const links = Array.from(document.querySelectorAll('a[href]'))
-    .map(a => a.textContent?.trim().slice(0, 40)).filter(Boolean).slice(0, 8);
-
-  const block = { _: title + ' — ' + location.href };
-  const content = { _: 'Content:' };
-  const headings = [...h1s, ...h2s];
-  if (headings.length) content['1'] = headings.join('. ');
-  if (textContent) content['2'] = textContent;
-  block['1'] = content;
-  const interactive = { _: 'Interactive elements:' };
-  if (buttons.length) interactive['1'] = 'Buttons: ' + buttons.join(', ');
-  if (links.length) interactive['3'] = 'Links: ' + links.join(', ');
-  if (Object.keys(interactive).length > 1) block['2'] = interactive;
-  if (meta) block['3'] = meta;
-  return block;
-}
-
-function buildBeachBlock(marks) {
-  if (!marks || marks.length === 0) return { _: 'No other visitors have been here.' };
-  const block = { _: marks.length + ' visitor' + (marks.length > 1 ? 's have' : ' has') + ' been here.' };
-  marks.slice(0, 9).forEach(function(m, i) {
-    const age = timeAgoShort(m.t || m.created_at);
-    const purpose = m.s || m.purpose || 'present';
-    block[String(i + 1)] = purpose + ' (' + age + ')';
-  });
-  return block;
-}
-
-function timeAgoShort(d) {
-  const diff = Date.now() - new Date(d).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 60) return mins + 'm ago';
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return hours + 'h ago';
-  return Math.floor(hours / 24) + 'd ago';
-}
-
-// ============================================================
-// CRYPTO
-// ============================================================
-
+// ── Crypto ──
 async function urlToHash(url) {
-  try {
-    const u = new URL(url);
-    const canonical = u.protocol + '//' + u.host.toLowerCase() + u.pathname.replace(/\/$/, '') + u.search;
-    const data = new TextEncoder().encode(canonical);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
-  } catch { return null; }
+  const u = new URL(url);
+  const canonical = u.protocol + '//' + u.host.toLowerCase() + u.pathname.replace(/\/$/, '');
+  const data = new TextEncoder().encode(canonical);
+  const buf = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
 }
 
-function generateAnonId() {
-  return 'x-' + crypto.randomUUID().slice(0, 8);
+// ── Storage ──
+function getHandle() { return localStorage.getItem(HANDLE_KEY) || ''; }
+function setHandle(h) { localStorage.setItem(HANDLE_KEY, h); }
+function getPass() { return sessionStorage.getItem(PASS_KEY) || ''; }
+function setPass(p) { sessionStorage.setItem(PASS_KEY, p); }
+function getApiKey() { return localStorage.getItem(API_KEY_KEY) || ''; }
+function setApiKey(k) { localStorage.setItem(API_KEY_KEY, k); }
+
+// ── Helpers ──
+function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+function ago(iso) {
+  var ms = Date.now() - new Date(iso).getTime();
+  var m = Math.floor(ms / 60000);
+  if (m < 60) return m + 'm ago';
+  var h = Math.floor(m / 60);
+  if (h < 24) return h + 'h ago';
+  return Math.floor(h / 24) + 'd ago';
 }
 
-// ============================================================
-// LLM
-// ============================================================
+// ── State ──
+var state = 'closed'; // closed | open | settings
+var markedHere = false;
+var currentUrlHash = null;
+var currentPoolId = null;
 
-async function callClaude(apiKey, model, prompt, maxTokens) {
-  const res = await fetch(ANTHROPIC_API, {
+// ── Supabase operations ──
+
+async function leaveMark(purpose) {
+  var handle = getHandle() || 'anon';
+  if (!currentUrlHash) currentUrlHash = await urlToHash(location.href);
+  await getSb().from('beach_marks').insert({
+    url_hash: currentUrlHash,
+    agent_id: handle,
+    purpose: purpose || 'present',
+  });
+}
+
+async function publishPassport(desc, offers, needs) {
+  var handle = getHandle();
+  if (!handle) return { error: 'Set a handle first' };
+  var block = { _: desc };
+  if (offers) block['1'] = offers;
+  if (needs) block['2'] = needs;
+  await getSb().from('pscale_blocks').upsert({
+    owner_id: handle,
+    name: 'passport',
+    block_type: 'general',
+    block: block,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'owner_id,name' });
+  return { ok: true };
+}
+
+async function ensurePool() {
+  if (currentPoolId) return currentPoolId;
+  if (!currentUrlHash) currentUrlHash = await urlToHash(location.href);
+  var { data } = await getSb().from('pool_state')
+    .select('pool_id').eq('url_hash', currentUrlHash).limit(1).maybeSingle();
+  if (data) { currentPoolId = data.pool_id; return currentPoolId; }
+  currentPoolId = 'pool-' + currentUrlHash;
+  await getSb().from('pool_state').insert({
+    pool_id: currentPoolId,
+    url_hash: currentUrlHash,
+    synthesis_hint: 'Beach visitors sharing what they see and think.',
+    ttl_days: 30,
+  });
+  return currentPoolId;
+}
+
+async function contributeToPool(text) {
+  var handle = getHandle();
+  if (!handle) return { error: 'Set a handle first' };
+  var poolId = await ensurePool();
+  await getSb().from('pool_contributions').insert({
+    pool_id: poolId,
+    url_hash: currentUrlHash,
+    agent_id: handle,
+    message: text,
+    message_type: 'contribution',
+  });
+  return { ok: true };
+}
+
+async function readPool() {
+  var poolId = await ensurePool();
+  var { data } = await getSb().from('pool_contributions')
+    .select('agent_id, message, created_at')
+    .eq('pool_id', poolId)
+    .order('created_at', { ascending: false })
+    .limit(20);
+  return data || [];
+}
+
+async function checkInbox() {
+  var handle = getHandle();
+  if (!handle) return [];
+  var { data } = await getSb().from('sand_inbox')
+    .select('*')
+    .eq('to_agent', handle)
+    .order('created_at', { ascending: false })
+    .limit(20);
+  return data || [];
+}
+
+async function sendInboxMessage(toAgent, content) {
+  var handle = getHandle();
+  if (!handle) return { error: 'Set a handle first' };
+  await getSb().from('sand_inbox').insert({
+    to_agent: toAgent,
+    from_agent: handle,
+    message: { type: 'general', content: content },
+    read: false,
+  });
+  return { ok: true };
+}
+
+// ── LLM (Tier 2) ──
+
+async function queryLLM(text) {
+  var key = getApiKey();
+  if (!key) return { error: 'Add API key in settings' };
+  var handle = getHandle() || 'anonymous visitor';
+  var systemPrompt = 'You are a beach guide at beach.hermitcrab.me — a live visualization of the pscale network where agents and humans leave marks, publish passports, and coordinate through liquid pools. You help visitors understand what they see and how to participate. Be concise, warm, and practical. The visitor\'s handle is "' + handle + '".';
+  var res = await fetch(ANTHROPIC_API, {
     method: 'POST',
     headers: {
-      'x-api-key': apiKey,
+      'x-api-key': key,
       'anthropic-version': '2023-06-01',
       'anthropic-dangerous-direct-browser-access': 'true',
       'content-type': 'application/json',
     },
-    body: JSON.stringify({ model, max_tokens: maxTokens || 512, messages: [{ role: 'user', content: prompt }] }),
+    body: JSON.stringify({
+      model: SOFT_MODEL,
+      max_tokens: 512,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: text }],
+    }),
   });
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error('Claude API ' + res.status + ': ' + err.slice(0, 200));
-  }
-  const data = await res.json();
-  return { text: data.content?.[0]?.text ?? '' };
-}
-
-function cleanJson(text) {
-  return text.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/, '').trim();
+  if (!res.ok) throw new Error('API ' + res.status);
+  var data = await res.json();
+  return { text: data.content?.[0]?.text || '' };
 }
 
 // ============================================================
-// RELAY + BEACH APIs
-// ============================================================
-
-async function writeBlock(urlHash, anonId, block) {
-  try {
-    await fetch(RELAY_BASE + '/' + urlHash + '/' + anonId, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(block),
-    });
-  } catch (e) { console.warn('[relay PUT]', e.message); }
-}
-
-async function readPeerBlocks(urlHash, myId) {
-  try {
-    const res = await fetch(RELAY_BASE + '/' + urlHash + '?exclude=' + myId);
-    if (!res.ok) return [];
-    return await res.json();
-  } catch { return []; }
-}
-
-async function leaveMark(urlHash, agentId, purpose) {
-  try {
-    await fetch(BEACH_BASE + '/' + urlHash + '/mark', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ agent_id: agentId, purpose: purpose || 'present' }),
-    });
-  } catch (e) { console.warn('[beach] mark error:', e.message); }
-}
-
-async function readMarks(urlHash) {
-  try {
-    const res = await fetch(BEACH_BASE + '/' + urlHash);
-    if (!res.ok) return { marks: [], peer_count: 0 };
-    return await res.json();
-  } catch { return { marks: [], peer_count: 0 }; }
-}
-
-// ============================================================
-// PROMPT COMPOSITION — walks agent block + resolves star refs
-// ============================================================
-
-function buildPrompt(agentBlock, pageBlock, beachBlock, userMessage) {
-  const sections = [];
-
-  // Agent semantic text
-  const star = bspStar(agentBlock);
-  if (star.semantic) sections.push(star.semantic);
-
-  // Star references → resolve to dynamic blocks
-  if (star.hidden) {
-    for (const [key, name] of Object.entries(star.hidden).sort()) {
-      let refBlock = null;
-      if (name === 'page-context') refBlock = pageBlock;
-      else if (name === 'beach-context') refBlock = beachBlock;
-      if (!refBlock) continue;
-      const texts = [];
-      const collect = function(node) {
-        if (typeof node === 'string') { texts.push(node); return; }
-        if (typeof node !== 'object' || node === null) return;
-        const us = collectUnderscore(node);
-        if (us) texts.push(us);
-        for (const k of '123456789') { if (k in node) collect(node[k]); }
-      };
-      collect(refBlock);
-      if (texts.length) sections.push(texts.join('\n'));
-    }
-  }
-
-  // Agent block branches (rules, style, format)
-  for (const d of '123456789') {
-    if (!(d in agentBlock)) continue;
-    const texts = [];
-    const collect = function(node) {
-      if (typeof node === 'string') { texts.push(node); return; }
-      if (typeof node !== 'object' || node === null) return;
-      const us = collectUnderscore(node);
-      if (us) texts.push(us);
-      for (const k of '123456789') { if (k in node) collect(node[k]); }
-    };
-    collect(agentBlock[d]);
-    if (texts.length) sections.push(texts.join(' '));
-  }
-
-  sections.push('\nUSER: ' + userMessage);
-  return sections.join('\n\n');
-}
-
-// ============================================================
-// KERNEL STATE
-// ============================================================
-
-let kernel = null;
-let pollTimer = null;
-
-function getApiKey() {
-  return localStorage.getItem(API_KEY_STORAGE) || null;
-}
-
-function setApiKey(key) {
-  localStorage.setItem(API_KEY_STORAGE, key);
-}
-
-function clearApiKey() {
-  localStorage.removeItem(API_KEY_STORAGE);
-}
-
-// ============================================================
-// KERNEL LIFECYCLE
-// ============================================================
-
-async function startKernel() {
-  const urlHash = await urlToHash(location.href);
-  if (!urlHash) return;
-  const anonId = generateAnonId();
-  kernel = {
-    urlHash, anonId,
-    url: location.href,
-    block: {
-      character: { id: anonId, name: 'anon' },
-      status: 'idle', pending_liquid: null,
-      outbox: { sequence: 0, events: [], domino: [] },
-    },
-    lastSeen: {},
-    beachMarks: [],
-    peerLiquids: [],
-  };
-
-  await writeBlock(urlHash, anonId, kernel.block);
-  pollCycle();
-  pollTimer = setInterval(pollCycle, POLL_INTERVAL_MS);
-
-  // Read beach
-  const { marks } = await readMarks(urlHash);
-  kernel.beachMarks = marks.filter(function(m) { return m.agent !== anonId; });
-  updateBeachDot();
-}
-
-async function pollCycle() {
-  if (!kernel) return;
-  try {
-    const peerBlocks = await readPeerBlocks(kernel.urlHash, kernel.anonId);
-    const peerLiquids = peerBlocks
-      .filter(function(p) { return p.pending_liquid; })
-      .map(function(p) { return { id: p.character?.id || 'unknown', name: p.character?.name || 'stranger', liquid: p.pending_liquid }; });
-    kernel.peerLiquids = peerLiquids;
-    updatePeers(peerLiquids, peerBlocks.length);
-  } catch (e) { console.warn('[poll]', e.message); }
-}
-
-// ============================================================
-// WIDGET — shadow DOM (ported from content.js)
+// WIDGET
 // ============================================================
 
 function createWidget() {
-  const host = document.createElement('div');
+  var host = document.createElement('div');
   host.id = 'xstream-host';
   host.style.cssText = 'position:fixed;z-index:2147483647;pointer-events:none;top:0;left:0;width:100%;height:100%;';
   document.body.appendChild(host);
-  const shadow = host.attachShadow({ mode: 'closed' });
+  var shadow = host.attachShadow({ mode: 'closed' });
 
   shadow.innerHTML = `
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  :host { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  :host { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 13px; color: #2c2823; }
 
-  .widget-root { position: fixed; pointer-events: auto; }
+  .root { position: fixed; pointer-events: auto; }
 
-  .compass { position: relative; width: 48px; height: 48px; cursor: grab; }
-  .compass.dragging { cursor: grabbing; }
-
+  /* ── Central button ── */
+  .center { position: relative; width: 48px; height: 48px; }
   .main-btn {
     width: 48px; height: 48px; border-radius: 50%;
-    border: 1px solid rgba(128,128,128,0.3);
-    background: rgba(255,255,255,0.95); color: #333;
+    border: 1px solid rgba(60,50,40,0.15); background: #fff;
     font-size: 18px; font-weight: 600; cursor: pointer;
     display: flex; align-items: center; justify-content: center;
-    transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    position: relative; z-index: 10;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08); transition: all 0.15s;
+    position: relative; z-index: 10; color: #2c2823;
   }
-  .main-btn:hover { border-color: rgba(128,128,128,0.5); }
+  .main-btn:hover { border-color: rgba(60,50,40,0.3); box-shadow: 0 2px 12px rgba(0,0,0,0.12); }
 
-  .action-btn {
-    width: 32px; height: 32px; border-radius: 50%; border: none;
+  /* ── Grab handle ── */
+  .grab {
+    position: absolute; bottom: -1px; right: -1px; width: 10px; height: 10px;
+    cursor: grab; z-index: 11; opacity: 0.3;
+  }
+  .grab::after {
+    content: ''; position: absolute; bottom: 2px; right: 2px;
+    width: 4px; height: 4px; border-right: 1.5px solid #9a9183;
+    border-bottom: 1.5px solid #9a9183;
+  }
+  .grab:hover { opacity: 0.7; }
+  .grab.dragging { cursor: grabbing; }
+
+  /* ── Action buttons (compass positions) ── */
+  .act {
+    position: absolute; width: 28px; height: 28px; border-radius: 50%;
+    border: 1px solid rgba(60,50,40,0.12); background: #fff;
     cursor: pointer; display: flex; align-items: center; justify-content: center;
-    position: absolute; top: 50%; transform: translateY(-50%);
-    transition: opacity 0.2s, transform 0.2s;
-    opacity: 0; pointer-events: none;
+    font-size: 11px; font-weight: 500; color: #6b6357;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06); transition: all 0.2s;
+    opacity: 0; pointer-events: none; z-index: 9;
   }
-  .action-btn.visible { opacity: 1; pointer-events: auto; }
-  .action-btn:hover { filter: brightness(0.85); }
-  .query-btn { right: calc(100% + 6px); background: #e6f1fb; color: #185fa5; }
-  .submit-btn { left: calc(100% + 6px); background: #eaf3de; color: #3b6d11; }
+  .act.vis { opacity: 1; pointer-events: auto; }
+  .act:hover { border-color: rgba(60,50,40,0.3); background: #f5f2ec; }
+  .act.disabled { opacity: 0.3; pointer-events: none; }
 
+  .act-top    { left: 50%; transform: translateX(-50%); bottom: calc(100% + 6px); }
+  .act-right  { top: 50%; transform: translateY(-50%); left: calc(100% + 6px); }
+  .act-bottom { left: 50%; transform: translateX(-50%); top: calc(100% + 6px); }
+  .act-left-1 { right: calc(100% + 6px); top: 50%; transform: translateY(-50%) translateX(-16px); }
+  .act-left-2 { right: calc(100% + 6px); top: 50%; transform: translateY(-50%) translateX(16px); }
+
+  /* ── Text zones ── */
   .zone {
-    position: absolute; width: 260px; max-height: 180px;
-    border-radius: 10px; padding: 8px 10px; font-size: 13px;
-    overflow-y: auto; transition: opacity 0.25s, transform 0.25s;
+    position: absolute; width: 220px; min-height: 60px;
+    border-radius: 8px; padding: 8px 10px;
+    background: #fff; border: 1px solid rgba(60,50,40,0.1);
+    box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+    transition: opacity 0.2s, transform 0.2s;
     opacity: 0; pointer-events: none; transform: scale(0.95);
-    background: rgba(255,255,255,0.96);
-    border: 1px solid rgba(128,128,128,0.15);
-    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    overflow-y: auto; resize: none;
   }
-  .zone.visible { opacity: 1; pointer-events: auto; transform: scale(1); }
+  .zone.vis { opacity: 1; pointer-events: auto; transform: scale(1); }
 
-  .vapor-input { right: calc(100% + 8px); bottom: calc(100% + 8px); }
-  .vapor-reply { right: calc(100% + 8px); top: calc(100% + 8px); }
-  .liquid-zone { left: calc(100% + 8px); top: calc(100% + 8px); }
-  .solid-zone  { left: calc(100% + 8px); bottom: calc(100% + 8px); }
+  .zone-tl { right: calc(100% + 40px); bottom: calc(100% + 6px); resize: both; direction: rtl; overflow: auto; }
+  .zone-tl > * { direction: ltr; }
+  .zone-tr { left: calc(100% + 40px); bottom: calc(100% + 6px); resize: vertical; }
+  .zone-bl { right: calc(100% + 40px); top: calc(100% + 6px); resize: both; direction: rtl; overflow: auto; }
+  .zone-bl > * { direction: ltr; }
+  .zone-br { left: calc(100% + 40px); top: calc(100% + 6px); resize: vertical; }
 
-  .zone-label { font-size: 10px; font-weight: 600; text-transform: lowercase; color: rgba(128,128,128,0.7); margin-bottom: 4px; }
+  .zone-label { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #9a9183; margin-bottom: 4px; }
 
-  textarea.vapor-textarea {
-    width: 100%; height: 80px; border: none; background: transparent;
-    font-size: 13px; color: inherit; resize: none; outline: none; font-family: inherit;
+  textarea {
+    width: 100%; min-height: 50px; border: none; background: transparent;
+    font-size: 13px; color: #2c2823; resize: none; outline: none; font-family: inherit;
   }
-  textarea.vapor-textarea::placeholder { color: rgba(128,128,128,0.5); }
+  textarea::placeholder { color: #c4bfb5; }
 
-  .card { background: rgba(128,128,128,0.06); border: 1px solid rgba(128,128,128,0.1); border-radius: 6px; padding: 5px 7px; margin-bottom: 4px; font-size: 12px; }
-  .card-peer { border-left: 2px solid #185fa5; }
+  .card {
+    background: rgba(60,50,40,0.04); border: 1px solid rgba(60,50,40,0.08);
+    border-radius: 6px; padding: 5px 7px; margin-bottom: 4px; font-size: 12px;
+    line-height: 1.4; color: #2c2823;
+  }
+  .card-peer { border-left: 2px solid #d85a30; }
+  .card-meta { font-size: 10px; color: #9a9183; margin-top: 2px; }
 
-  .commit-btn { font-size: 10px; padding: 2px 8px; border-radius: 4px; background: rgba(128,128,128,0.1); border: 1px solid rgba(128,128,128,0.2); color: inherit; cursor: pointer; }
-  .commit-btn:hover { background: rgba(128,128,128,0.2); }
+  .dots span {
+    display: inline-block; width: 4px; height: 4px;
+    background: #9a9183; border-radius: 50%; margin: 0 1px;
+    animation: blink 1.2s infinite;
+  }
+  .dots span:nth-child(2) { animation-delay: 0.2s; }
+  .dots span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes blink { 0%,80%,100% { opacity: 0.3; } 40% { opacity: 1; } }
 
-  .peer-badge { font-size: 10px; background: #e6f1fb; color: #185fa5; padding: 1px 6px; border-radius: 8px; display: inline-block; }
+  .hint { font-size: 9px; color: #c4bfb5; margin-top: 4px; }
 
-  .typing-dots span { display: inline-block; width: 4px; height: 4px; background: rgba(128,128,128,0.5); border-radius: 50%; margin: 0 1px; animation: blink 1.2s infinite; }
-  .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
-  .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
-  @keyframes blink { 0%, 80%, 100% { opacity: 0.3; } 40% { opacity: 1; } }
+  /* ── Settings panel ── */
+  .settings {
+    position: absolute; right: calc(100% + 8px); bottom: 0;
+    width: 240px; background: #fff; border: 1px solid rgba(60,50,40,0.1);
+    border-radius: 8px; padding: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    opacity: 0; pointer-events: none; transition: opacity 0.2s;
+  }
+  .settings.vis { opacity: 1; pointer-events: auto; }
+  .settings label { display: block; font-size: 10px; color: #9a9183; margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .settings input {
+    width: 100%; padding: 5px 7px; border: 1px solid rgba(60,50,40,0.12);
+    border-radius: 5px; font-size: 12px; color: #2c2823; background: #faf9f6;
+    margin-bottom: 8px; outline: none; font-family: inherit;
+  }
+  .settings input:focus { border-color: rgba(60,50,40,0.3); }
+  .settings .s-btn {
+    font-size: 11px; padding: 4px 10px; border-radius: 5px;
+    border: 1px solid rgba(60,50,40,0.12); background: #f5f2ec;
+    color: #6b6357; cursor: pointer;
+  }
+  .settings .s-btn:hover { background: #ebe7df; }
+  .settings h3 { font-size: 12px; font-weight: 500; margin-bottom: 8px; color: #2c2823; }
 
-  .kb-hint { font-size: 9px; color: rgba(128,128,128,0.5); margin-top: 4px; text-align: right; }
+  /* ── Inbox badge ── */
+  .badge {
+    position: absolute; top: -2px; right: -2px;
+    min-width: 14px; height: 14px; border-radius: 7px;
+    background: #d85a30; color: #fff; font-size: 8px; font-weight: 700;
+    display: none; align-items: center; justify-content: center;
+    padding: 0 3px; z-index: 11;
+  }
+  .badge.vis { display: flex; }
 
-  .beach-dot { position: absolute; top: -2px; right: -2px; width: 14px; height: 14px; border-radius: 50%; background: #d97706; color: white; font-size: 8px; font-weight: 700; display: flex; align-items: center; justify-content: center; z-index: 11; pointer-events: none; }
+  /* ── Send form ── */
+  .send-form { display: flex; flex-direction: column; gap: 4px; }
+  .send-form input, .send-form textarea {
+    padding: 5px 7px; border: 1px solid rgba(60,50,40,0.12);
+    border-radius: 5px; font-size: 12px; background: #faf9f6; color: #2c2823;
+  }
+  .send-btn {
+    align-self: flex-end; font-size: 10px; padding: 3px 10px;
+    border-radius: 5px; border: 1px solid rgba(60,50,40,0.12);
+    background: #f5f2ec; color: #6b6357; cursor: pointer;
+  }
+  .send-btn:hover { background: #ebe7df; }
 
-  .proximity-toast { position: absolute; bottom: calc(100% + 12px); left: 50%; transform: translateX(-50%); background: rgba(217,119,6,0.95); color: white; padding: 6px 12px; border-radius: 8px; font-size: 11px; white-space: nowrap; max-width: 300px; overflow: hidden; text-overflow: ellipsis; animation: toast-in 0.3s ease; pointer-events: auto; cursor: pointer; }
-  @keyframes toast-in { from { opacity: 0; transform: translateX(-50%) translateY(4px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
-
-  /* API key setup */
-  .key-setup { font-size: 12px; color: #666; }
-  .key-setup input { width: 100%; padding: 4px 6px; border: 1px solid rgba(128,128,128,0.3); border-radius: 4px; font-size: 12px; font-family: monospace; background: transparent; color: inherit; margin: 4px 0; }
-  .key-setup button { font-size: 10px; padding: 3px 10px; border-radius: 4px; border: 1px solid rgba(128,128,128,0.3); background: rgba(128,128,128,0.1); color: inherit; cursor: pointer; }
-  .key-setup button:hover { background: rgba(128,128,128,0.2); }
-  .key-setup .key-status { font-size: 10px; color: rgba(128,128,128,0.6); margin-top: 4px; }
+  /* Passport form */
+  .passport-form { display: flex; flex-direction: column; gap: 4px; }
+  .passport-form input {
+    padding: 5px 7px; border: 1px solid rgba(60,50,40,0.12);
+    border-radius: 5px; font-size: 12px; background: #faf9f6; color: #2c2823;
+  }
 </style>
 
-<div class="widget-root" id="widget">
-  <div class="compass" id="compass">
-    <div class="zone vapor-input" id="zone-vapor-input">
-      <div class="zone-label">vapor</div>
-      <textarea class="vapor-textarea" id="input" placeholder="What are you thinking?"></textarea>
-      <div class="kb-hint">\u2318\u23CE query \u00b7 \u21E7\u23CE submit</div>
+<div class="root" id="root">
+  <div class="center" id="center">
+
+    <!-- Zones -->
+    <div class="zone zone-tl" id="z-tl">
+      <div class="zone-label">input</div>
+      <textarea id="input" placeholder="What's on your mind?"></textarea>
     </div>
 
-    <div class="zone vapor-reply" id="zone-vapor-reply">
-      <div class="zone-label">reply</div>
-      <div id="reply-content"><div class="key-setup" id="key-setup">
-        <div>Add your Anthropic API key to unlock private thinking:</div>
-        <input type="password" id="key-input" placeholder="sk-ant-...">
-        <button id="key-save">save key</button>
-        <div class="key-status" id="key-status"></div>
-      </div></div>
+    <div class="zone zone-tr" id="z-tr">
+      <div class="zone-label" id="tr-label">marks</div>
+      <div id="tr-content"></div>
     </div>
 
-    <div class="zone liquid-zone" id="zone-liquid">
-      <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;">
-        <div class="zone-label" style="margin:0;">liquid</div>
-        <span class="peer-badge" id="peer-badge" style="display:none;"></span>
-        <span style="flex:1;"></span>
-        <button class="commit-btn" id="commit-btn" style="display:none;">commit</button>
-      </div>
-      <div id="liquid-content"></div>
+    <div class="zone zone-bl" id="z-bl">
+      <div class="zone-label" id="bl-label">response</div>
+      <div id="bl-content"></div>
     </div>
 
-    <div class="zone solid-zone" id="zone-solid">
-      <div class="zone-label">solid</div>
-      <div id="solid-content"></div>
+    <div class="zone zone-br" id="z-br">
+      <div class="zone-label" id="br-label">pool</div>
+      <div id="br-content"></div>
     </div>
 
-    <button class="action-btn query-btn" id="query-btn" title="Query">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-    </button>
-    <button class="action-btn submit-btn" id="submit-btn" title="Submit">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-    </button>
+    <!-- Action buttons -->
+    <button class="act act-top" id="btn-submit" title="Submit as mark">&#9650;</button>
+    <button class="act act-right" id="btn-commit" title="Commit to pool">&#9654;</button>
+    <button class="act act-bottom" id="btn-inbox" title="Check inbox">&#9660;</button>
+    <div style="position:absolute;right:calc(100% + 4px);top:50%;transform:translateY(-50%);display:flex;gap:3px;z-index:9;">
+      <button class="act" id="btn-llm" title="Ask LLM" style="position:static;transform:none;">&#9889;</button>
+      <button class="act" id="btn-passport" title="Passport" style="position:static;transform:none;">&#9312;</button>
+    </div>
 
+    <!-- Main button -->
     <button class="main-btn" id="main-btn">#</button>
-    <div class="beach-dot" id="beach-dot" style="display:none;"></div>
+    <div class="badge" id="badge">0</div>
+
+    <!-- Grab handle -->
+    <div class="grab" id="grab"></div>
+  </div>
+
+  <!-- Settings -->
+  <div class="settings" id="settings">
+    <h3>settings</h3>
+    <label for="s-handle">handle</label>
+    <input id="s-handle" type="text" placeholder="your name on the beach">
+    <label for="s-pass">passphrase</label>
+    <input id="s-pass" type="password" placeholder="for pool + inbox (session only)">
+    <label for="s-api">api key (tier 2)</label>
+    <input id="s-api" type="password" placeholder="sk-ant-...">
+    <div style="display:flex;gap:6px;margin-top:4px;">
+      <button class="s-btn" id="s-save">save</button>
+      <button class="s-btn" id="s-help">?</button>
+    </div>
+    <div id="s-status" class="hint" style="margin-top:6px;"></div>
   </div>
 </div>`;
 
-  // ── Widget state ──
-  const $ = function(sel) { return shadow.querySelector(sel); };
-  const mainBtn = $('#main-btn');
-  const queryBtn = $('#query-btn');
-  const submitBtn = $('#submit-btn');
-  const commitBtn = $('#commit-btn');
-  const input = $('#input');
-  const peerBadge = $('#peer-badge');
-  const compass = $('#compass');
-  const widgetRoot = $('#widget');
+  // ── Refs ──
+  var $ = function(s) { return shadow.querySelector(s); };
+  var root = $('#root');
+  var mainBtn = $('#main-btn');
+  var grab = $('#grab');
+  var badge = $('#badge');
 
-  let isOpen = false;
-  let liquidItems = [];
-  let solidItems = [];
-  let beachMarks = [];
+  var zTL = $('#z-tl'), zTR = $('#z-tr'), zBL = $('#z-bl'), zBR = $('#z-br');
+  var input = $('#input');
+  var trContent = $('#tr-content'), blContent = $('#bl-content'), brContent = $('#br-content');
+  var trLabel = $('#tr-label'), blLabel = $('#bl-label'), brLabel = $('#br-label');
 
-  const zones = ['#zone-vapor-input', '#zone-vapor-reply', '#zone-liquid', '#zone-solid'];
+  var btnSubmit = $('#btn-submit'), btnCommit = $('#btn-commit');
+  var btnInbox = $('#btn-inbox'), btnLLM = $('#btn-llm'), btnPassport = $('#btn-passport');
 
-  function escHtml(s) {
-    const d = document.createElement('div');
-    d.textContent = s;
-    return d.innerHTML;
-  }
+  var settingsPanel = $('#settings');
+  var sHandle = $('#s-handle'), sPass = $('#s-pass'), sApi = $('#s-api');
+  var sSave = $('#s-save'), sHelp = $('#s-help'), sStatus = $('#s-status');
 
-  // ── API key setup ──
-  const keySetup = $('#key-setup');
-  const keyInput = $('#key-input');
-  const keySave = $('#key-save');
-  const keyStatus = $('#key-status');
-
-  function refreshKeyUI() {
-    const key = getApiKey();
-    if (key) {
-      keySetup.innerHTML = '<div class="key-status">API key set (\u2022\u2022\u2022\u2022' + key.slice(-4) + ')</div>' +
-        '<button id="key-clear" style="font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid rgba(128,128,128,0.3);background:transparent;color:inherit;cursor:pointer;margin-top:4px;">clear key</button>';
-      shadow.querySelector('#key-clear').onclick = function() {
-        clearApiKey();
-        refreshKeyUI();
-      };
-    }
-  }
-
-  keySave.onclick = function() {
-    const val = keyInput.value.trim();
-    if (!val.startsWith('sk-ant-')) {
-      keyStatus.textContent = 'Key must start with sk-ant-';
-      return;
-    }
-    setApiKey(val);
-    refreshKeyUI();
-    // Start kernel now that we have a key
-    if (!kernel) startKernel();
-  };
-
-  refreshKeyUI();
-
-  // ── Beach marks display ──
-  function renderBeachMarks() {
-    const solidEl = $('#solid-content');
-    if (beachMarks.length === 0 && solidItems.length === 0) {
-      solidEl.innerHTML = '<div style="font-size:11px;color:rgba(128,128,128,0.5);text-align:center;padding:12px 0;">No activity at this page yet</div>';
-      return;
-    }
-    let html = '';
-    if (beachMarks.length > 0) {
-      html += '<div style="font-size:10px;font-weight:600;color:rgba(128,128,128,0.6);margin-bottom:4px;">Others looked for:</div>';
-      beachMarks.forEach(function(m) {
-        html += '<div class="card card-peer"><span style="font-size:10px;opacity:0.5;">' + timeAgoShort(m.t || m.created_at) + '</span> ' + escHtml(m.s || m.purpose || 'present') + '</div>';
-      });
-    }
-    solidItems.forEach(function(s) { html += '<div class="card">' + escHtml(s) + '</div>'; });
-    solidEl.innerHTML = html;
-  }
-
-  // ── Drag ──
-  let isDragging = false;
-  let dragStart = { x: 0, y: 0 };
-  let position = { x: window.innerWidth - 80, y: window.innerHeight - 120 };
-
-  function applyPosition() {
-    widgetRoot.style.left = position.x + 'px';
-    widgetRoot.style.top = position.y + 'px';
-    widgetRoot.style.bottom = 'auto';
-    widgetRoot.style.transform = 'none';
-  }
-
+  // ── Position ──
+  var pos = { x: window.innerWidth - 80, y: window.innerHeight - 100 };
   try {
-    const saved = JSON.parse(localStorage.getItem(POS_KEY));
+    var saved = JSON.parse(localStorage.getItem(POS_KEY));
     if (saved) {
-      position.x = Math.max(0, Math.min(window.innerWidth - 56, saved.x));
-      position.y = Math.max(0, Math.min(window.innerHeight - 56, saved.y));
+      pos.x = Math.max(0, Math.min(window.innerWidth - 56, saved.x));
+      pos.y = Math.max(0, Math.min(window.innerHeight - 56, saved.y));
     }
   } catch {}
-  applyPosition();
+  function applyPos() { root.style.left = pos.x + 'px'; root.style.top = pos.y + 'px'; }
+  applyPos();
 
-  compass.addEventListener('mousedown', function(e) {
-    if (e.target.closest('button') || e.target.closest('textarea') || e.target.closest('input')) return;
-    e.preventDefault();
-    isDragging = true;
-    compass.classList.add('dragging');
-    dragStart = { x: e.clientX - position.x, y: e.clientY - position.y };
+  // ── Drag via grab handle ──
+  var dragging = false, dragStart = {};
+  grab.addEventListener('mousedown', function(e) {
+    e.preventDefault(); e.stopPropagation();
+    dragging = true; grab.classList.add('dragging');
+    dragStart = { x: e.clientX - pos.x, y: e.clientY - pos.y };
     function onMove(e) {
-      position.x = Math.max(0, Math.min(window.innerWidth - 56, e.clientX - dragStart.x));
-      position.y = Math.max(0, Math.min(window.innerHeight - 56, e.clientY - dragStart.y));
-      applyPosition();
+      pos.x = Math.max(0, Math.min(window.innerWidth - 56, e.clientX - dragStart.x));
+      pos.y = Math.max(0, Math.min(window.innerHeight - 56, e.clientY - dragStart.y));
+      applyPos();
     }
     function onUp() {
-      isDragging = false;
-      compass.classList.remove('dragging');
-      try { localStorage.setItem(POS_KEY, JSON.stringify(position)); } catch {}
+      dragging = false; grab.classList.remove('dragging');
+      try { localStorage.setItem(POS_KEY, JSON.stringify(pos)); } catch {}
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     }
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
   });
-
-  // ── Open/Close ──
-  function toggleOpen() {
-    isOpen = !isOpen;
-    mainBtn.textContent = isOpen ? '+' : '#';
-    zones.forEach(function(sel) { $(sel).classList.toggle('visible', isOpen); });
-    queryBtn.classList.toggle('visible', isOpen);
-    submitBtn.classList.toggle('visible', isOpen);
-    if (isOpen) {
-      setTimeout(function() { input.focus(); }, 100);
-      renderBeachMarks();
-      if (kernel) leaveMark(kernel.urlHash, kernel.anonId, 'present');
+  // Touch drag
+  grab.addEventListener('touchstart', function(e) {
+    e.preventDefault(); e.stopPropagation();
+    var t = e.touches[0];
+    dragging = true;
+    dragStart = { x: t.clientX - pos.x, y: t.clientY - pos.y };
+    function onMove(e) {
+      var t = e.touches[0];
+      pos.x = Math.max(0, Math.min(window.innerWidth - 56, t.clientX - dragStart.x));
+      pos.y = Math.max(0, Math.min(window.innerHeight - 56, t.clientY - dragStart.y));
+      applyPos();
     }
+    function onUp() {
+      dragging = false;
+      try { localStorage.setItem(POS_KEY, JSON.stringify(pos)); } catch {}
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onUp);
+    }
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchend', onUp);
+  }, { passive: false });
+
+  // ── State transitions ──
+  var allZones = [zTL, zTR, zBL, zBR];
+  var allBtns = [btnSubmit, btnCommit, btnInbox, btnLLM, btnPassport];
+  var blMode = 'empty'; // empty | llm | passport | send
+
+  function showOpen() {
+    allZones.forEach(function(z) { z.classList.add('vis'); });
+    allBtns.forEach(function(b) { b.classList.add('vis'); });
+    settingsPanel.classList.remove('vis');
+    updateCommitState();
+    updateLLMState();
   }
 
+  function showSettings() {
+    allZones.forEach(function(z) { z.classList.remove('vis'); });
+    allBtns.forEach(function(b) { b.classList.remove('vis'); });
+    settingsPanel.classList.add('vis');
+    sHandle.value = getHandle();
+    sPass.value = getPass();
+    sApi.value = getApiKey() ? '\u2022\u2022\u2022\u2022' + getApiKey().slice(-4) : '';
+  }
+
+  function showClosed() {
+    allZones.forEach(function(z) { z.classList.remove('vis'); });
+    allBtns.forEach(function(b) { b.classList.remove('vis'); });
+    settingsPanel.classList.remove('vis');
+  }
+
+  function updateCommitState() {
+    var has = getHandle() && getPass();
+    if (has) btnCommit.classList.remove('disabled');
+    else btnCommit.classList.add('disabled');
+  }
+
+  function updateLLMState() {
+    if (getApiKey()) btnLLM.classList.remove('disabled');
+    else btnLLM.classList.add('disabled');
+  }
+
+  // ── Main button ──
   mainBtn.addEventListener('click', function() {
-    if (!isDragging) toggleOpen();
+    if (state === 'closed') {
+      state = 'open';
+      mainBtn.textContent = '+';
+      showOpen();
+      // Leave "I was here" once
+      if (!markedHere) {
+        markedHere = true;
+        leaveMark('present').catch(function() {});
+      }
+      setTimeout(function() { input.focus(); }, 100);
+    } else if (state === 'open') {
+      state = 'settings';
+      mainBtn.textContent = '\u2715';
+      showSettings();
+    } else {
+      state = 'closed';
+      mainBtn.textContent = '#';
+      showClosed();
+    }
   });
 
-  // ── Query soft-LLM ──
-  queryBtn.addEventListener('click', async function() {
-    const text = input.value.trim();
+  // ── Submit mark ──
+  btnSubmit.addEventListener('click', async function() {
+    var text = input.value.trim();
     if (!text) return;
-    const apiKey = getApiKey();
-    if (!apiKey) {
-      $('#reply-content').innerHTML = '<div style="font-size:11px;color:#b91c1c;">Add your API key first (see reply zone)</div>';
-      return;
-    }
-    $('#reply-content').innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div>';
+    trLabel.textContent = 'mark';
+    trContent.innerHTML = '<div class="dots"><span></span><span></span><span></span></div>';
     try {
-      const pageBlock = buildPageBlock();
-      const beachBlock = buildBeachBlock(kernel?.beachMarks || []);
-      const prompt = buildPrompt(SOFT_AGENT_BLOCK, pageBlock, beachBlock, text);
-      const { text: reply } = await callClaude(apiKey, SOFT_MODEL, prompt, 512);
-      $('#reply-content').textContent = reply.trim();
+      await leaveMark(text);
+      trContent.innerHTML = '<div class="card">marked: ' + esc(text) + '</div>';
+      input.value = '';
     } catch (e) {
-      $('#reply-content').textContent = 'Error: ' + e.message;
+      trContent.innerHTML = '<div class="card" style="color:#b91c1c;">' + esc(e.message) + '</div>';
     }
   });
 
-  // ── Submit to liquid ──
-  submitBtn.addEventListener('click', function() {
-    const text = input.value.trim();
-    if (!text) return;
-    liquidItems.push({ text: text, self: true });
-    input.value = '';
-    renderLiquid();
-    commitBtn.style.display = 'inline-block';
-    if (kernel) {
-      kernel.block.pending_liquid = text;
-      writeBlock(kernel.urlHash, kernel.anonId, kernel.block);
-      leaveMark(kernel.urlHash, kernel.anonId, text.slice(0, 200));
-    }
-  });
-
-  // ── Commit ──
-  commitBtn.addEventListener('click', async function() {
-    const selfItems = liquidItems.filter(function(i) { return i.self; });
-    if (selfItems.length === 0) return;
-    const combined = selfItems.map(function(i) { return i.text; }).join('; ');
-    $('#solid-content').innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div>';
-    const apiKey = getApiKey();
-    if (!apiKey) {
-      $('#solid-content').textContent = 'Add API key to commit.';
+  // ── Commit to pool ──
+  btnCommit.addEventListener('click', async function() {
+    var text = input.value.trim();
+    if (!text) { text = 'I am listening'; }
+    if (!getHandle() || !getPass()) {
+      brLabel.textContent = 'pool';
+      brContent.innerHTML = '<div class="hint">Set handle + passphrase in settings first</div>';
       return;
     }
+    brLabel.textContent = 'pool';
+    brContent.innerHTML = '<div class="dots"><span></span><span></span><span></span></div>';
     try {
-      const pageBlock = buildPageBlock();
-      const beachBlock = buildBeachBlock(kernel?.beachMarks || []);
-      const prompt = buildPrompt(MEDIUM_AGENT_BLOCK, pageBlock, beachBlock, combined);
-      const { text } = await callClaude(apiKey, MEDIUM_MODEL, prompt, 1024);
-      const result = JSON.parse(cleanJson(text));
-      solidItems.push(result.solid || 'Done.');
-      renderBeachMarks();
-      if (kernel) {
-        kernel.block.pending_liquid = null;
-        kernel.block.status = 'idle';
-        await writeBlock(kernel.urlHash, kernel.anonId, kernel.block);
+      await contributeToPool(text);
+      input.value = '';
+      // Read pool
+      var items = await readPool();
+      var html = '';
+      items.forEach(function(p) {
+        var mine = p.agent_id === getHandle();
+        html += '<div class="card' + (mine ? '' : ' card-peer') + '">' +
+          esc(p.message) +
+          '<div class="card-meta">' + esc(p.agent_id) + ' \u00b7 ' + ago(p.created_at) + '</div></div>';
+      });
+      brContent.innerHTML = html || '<div class="hint">Pool is quiet</div>';
+    } catch (e) {
+      brContent.innerHTML = '<div class="card" style="color:#b91c1c;">' + esc(e.message) + '</div>';
+    }
+  });
+
+  // ── Inbox ──
+  btnInbox.addEventListener('click', async function() {
+    if (!getHandle()) {
+      brLabel.textContent = 'inbox';
+      brContent.innerHTML = '<div class="hint">Set a handle in settings first</div>';
+      blLabel.textContent = 'send';
+      blContent.innerHTML = '<div class="hint">Set a handle first</div>';
+      return;
+    }
+    // Right: show messages
+    brLabel.textContent = 'inbox';
+    brContent.innerHTML = '<div class="dots"><span></span><span></span><span></span></div>';
+    try {
+      var msgs = await checkInbox();
+      if (msgs.length === 0) {
+        brContent.innerHTML = '<div class="hint">No messages</div>';
+      } else {
+        var html = '';
+        msgs.forEach(function(m) {
+          var content = typeof m.message === 'object' ? (m.message.content || JSON.stringify(m.message)) : String(m.message);
+          html += '<div class="card card-peer">' + esc(content) +
+            '<div class="card-meta">from ' + esc(m.from_agent) + ' \u00b7 ' + ago(m.created_at) + '</div></div>';
+        });
+        brContent.innerHTML = html;
       }
     } catch (e) {
-      solidItems.push('Error: ' + e.message);
-      renderBeachMarks();
+      brContent.innerHTML = '<div class="card" style="color:#b91c1c;">' + esc(e.message) + '</div>';
     }
-    liquidItems = liquidItems.filter(function(i) { return !i.self; });
-    renderLiquid();
-    commitBtn.style.display = 'none';
+    // Left: send form
+    blLabel.textContent = 'send message';
+    blMode = 'send';
+    blContent.innerHTML =
+      '<div class="send-form">' +
+      '<input id="send-to" placeholder="handle or sed:commons:3">' +
+      '<textarea id="send-msg" placeholder="your message" style="min-height:40px;border:1px solid rgba(60,50,40,0.12);border-radius:5px;padding:5px 7px;background:#faf9f6;"></textarea>' +
+      '<button class="send-btn" id="send-go">send</button>' +
+      '</div>';
+    shadow.querySelector('#send-go').addEventListener('click', async function() {
+      var to = shadow.querySelector('#send-to').value.trim();
+      var msg = shadow.querySelector('#send-msg').value.trim();
+      if (!to || !msg) return;
+      try {
+        await sendInboxMessage(to, msg);
+        shadow.querySelector('#send-msg').value = '';
+        blContent.innerHTML = '<div class="card">Sent to ' + esc(to) + '</div>';
+      } catch (e) {
+        blContent.innerHTML = '<div class="card" style="color:#b91c1c;">' + esc(e.message) + '</div>';
+      }
+    });
+  });
+
+  // ── LLM query ──
+  btnLLM.addEventListener('click', async function() {
+    var text = input.value.trim();
+    if (!text) { text = 'What can I do here?'; }
+    if (!getApiKey()) {
+      blLabel.textContent = 'llm';
+      blContent.innerHTML = '<div class="hint">Add API key in settings to unlock</div>';
+      return;
+    }
+    blLabel.textContent = 'thinking';
+    blMode = 'llm';
+    blContent.innerHTML = '<div class="dots"><span></span><span></span><span></span></div>';
+    try {
+      var result = await queryLLM(text);
+      blContent.innerHTML = '<div class="card">' + esc(result.text) + '</div>';
+    } catch (e) {
+      blContent.innerHTML = '<div class="card" style="color:#b91c1c;">' + esc(e.message) + '</div>';
+    }
+  });
+
+  // ── Passport ──
+  btnPassport.addEventListener('click', function() {
+    blLabel.textContent = 'passport';
+    blMode = 'passport';
+    blContent.innerHTML =
+      '<div class="passport-form">' +
+      '<input id="pp-desc" placeholder="who you are">' +
+      '<input id="pp-offers" placeholder="what you offer">' +
+      '<input id="pp-needs" placeholder="what you need">' +
+      '<button class="send-btn" id="pp-go">publish</button>' +
+      '</div>';
+    shadow.querySelector('#pp-go').addEventListener('click', async function() {
+      var desc = shadow.querySelector('#pp-desc').value.trim();
+      var offers = shadow.querySelector('#pp-offers').value.trim();
+      var needs = shadow.querySelector('#pp-needs').value.trim();
+      if (!desc) return;
+      if (!getHandle()) {
+        blContent.innerHTML = '<div class="hint">Set a handle in settings first</div>';
+        return;
+      }
+      try {
+        await publishPassport(desc, offers, needs);
+        blContent.innerHTML = '<div class="card">Passport published for ' + esc(getHandle()) + '</div>';
+      } catch (e) {
+        blContent.innerHTML = '<div class="card" style="color:#b91c1c;">' + esc(e.message) + '</div>';
+      }
+    });
   });
 
   // ── Keyboard shortcuts ──
   input.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+    if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      queryBtn.click();
-    } else if (e.key === 'Enter' && e.shiftKey) {
-      e.preventDefault();
-      submitBtn.click();
-    } else if (e.key === 'Escape') {
-      toggleOpen();
+      btnSubmit.click();
     }
   });
 
-  function renderLiquid() {
-    var el = $('#liquid-content');
-    el.innerHTML = liquidItems.map(function(item) {
-      return '<div class="card' + (item.self ? '' : ' card-peer') + '">' +
-        (item.self ? '' : '<span style="font-size:10px;opacity:0.7;">' + (item.name || '') + ':</span> ') +
-        escHtml(item.text) + '</div>';
-    }).join('');
-  }
+  // ── Settings ──
+  sSave.addEventListener('click', function() {
+    var h = sHandle.value.trim();
+    var p = sPass.value.trim();
+    var a = sApi.value.trim();
+    if (h) setHandle(h);
+    if (p && p.indexOf('\u2022') === -1) setPass(p);
+    if (a && a.startsWith('sk-ant-')) setApiKey(a);
+    sStatus.textContent = 'Saved.';
+    setTimeout(function() { sStatus.textContent = ''; }, 2000);
+    updateCommitState();
+    updateLLMState();
+  });
 
-  // ── External update hooks (called by kernel) ──
-  window._xstreamWidget = {
-    updateBeachDot: function(count) {
-      const dot = shadow.querySelector('#beach-dot');
-      if (count > 0) {
-        dot.textContent = count > 9 ? '9+' : String(count);
-        dot.style.display = 'flex';
+  sHelp.addEventListener('click', function() {
+    sStatus.innerHTML =
+      '<strong>Handle:</strong> your name on marks + passport<br>' +
+      '<strong>Passphrase:</strong> for pool + inbox (session only, not stored)<br>' +
+      '<strong>API key:</strong> unlocks LLM thinking (Tier 2)';
+  });
+
+  // ── Inbox poll for badge ──
+  async function pollInbox() {
+    if (!getHandle()) return;
+    try {
+      var msgs = await checkInbox();
+      var unread = msgs.filter(function(m) { return !m.read; });
+      if (unread.length > 0) {
+        badge.textContent = unread.length > 9 ? '9+' : String(unread.length);
+        badge.classList.add('vis');
       } else {
-        dot.style.display = 'none';
+        badge.classList.remove('vis');
       }
-    },
-    setBeachMarks: function(marks) {
-      beachMarks = marks;
-      if (isOpen) renderBeachMarks();
-    },
-    updatePeers: function(peers, count) {
-      liquidItems = liquidItems.filter(function(i) { return i.self; });
-      peers.forEach(function(p) {
-        liquidItems.push({ text: p.liquid, self: false, name: p.name });
-      });
-      renderLiquid();
-      if (count > 0) {
-        peerBadge.textContent = count + ' peer' + (count > 1 ? 's' : '');
-        peerBadge.style.display = 'inline-block';
-      } else {
-        peerBadge.style.display = 'none';
-      }
-    },
-  };
-}
-
-// ── Bridge functions ──
-function updateBeachDot() {
-  if (window._xstreamWidget && kernel) {
-    const meaningful = kernel.beachMarks.filter(function(m) {
-      return m.s && m.s !== 'present' && (m.s || '').length > 3;
-    });
-    window._xstreamWidget.updateBeachDot(meaningful.length);
-    window._xstreamWidget.setBeachMarks(meaningful);
+    } catch {}
   }
+  pollInbox();
+  setInterval(pollInbox, 60000);
+
+  // ── Init URL hash ──
+  urlToHash(location.href).then(function(h) { currentUrlHash = h; });
 }
 
-function updatePeers(peers, count) {
-  if (window._xstreamWidget) {
-    window._xstreamWidget.updatePeers(peers, count);
-  }
-}
-
-// ============================================================
-// INIT
-// ============================================================
-
-function init() {
-  createWidget();
-  // Start kernel if API key exists (full tier 2)
-  // Even without key, widget shows — liquid and solid work without LLM
-  if (getApiKey()) {
-    startKernel();
-  }
-}
-
+// ── Boot ──
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
+  document.addEventListener('DOMContentLoaded', createWidget);
 } else {
-  init();
+  createWidget();
 }
 
 })();
