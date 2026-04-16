@@ -240,9 +240,9 @@ function createWidget() {
   .act:hover { border-color: rgba(60,50,40,0.3); background: #f5f2ec; }
   .act.disabled { opacity: 0.3; pointer-events: none; }
 
-  .act-top    { left: 50%; transform: translateX(-50%); bottom: calc(100% + 3px); }
-  .act-right  { top: 50%; transform: translateY(-50%); left: calc(100% + 3px); }
-  .act-bottom { left: 50%; transform: translateX(-50%); top: calc(100% + 3px); }
+  .act-top    { left: 50%; transform: translateX(-50%); bottom: calc(100% + 8px); }
+  .act-right  { top: 50%; transform: translateY(-50%); left: calc(100% + 8px); }
+  .act-bottom { left: 50%; transform: translateX(-50%); top: calc(100% + 8px); }
   .act-left-1 { right: calc(100% + 6px); top: 50%; transform: translateY(-50%) translateX(-16px); }
   .act-left-2 { right: calc(100% + 6px); top: 50%; transform: translateY(-50%) translateX(16px); }
 
@@ -260,10 +260,10 @@ function createWidget() {
 
   .zone-tl { right: calc(100% + 6px); bottom: calc(100% + 4px); resize: both; direction: rtl; overflow: auto; }
   .zone-tl > * { direction: ltr; }
-  .zone-tr { left: calc(100% + 6px); bottom: calc(100% + 4px); resize: vertical; }
+  .zone-tr { left: calc(100% + 6px); bottom: calc(100% + 4px); resize: both; overflow: auto; }
   .zone-bl { right: calc(100% + 6px); top: calc(100% + 4px); resize: both; direction: rtl; overflow: auto; }
   .zone-bl > * { direction: ltr; }
-  .zone-br { left: calc(100% + 6px); top: calc(100% + 4px); resize: vertical; }
+  .zone-br { left: calc(100% + 6px); top: calc(100% + 4px); resize: both; overflow: auto; }
 
   .zone-label { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #9a9183; margin-bottom: 4px; }
 
@@ -374,7 +374,7 @@ function createWidget() {
     <button class="act act-top" id="btn-submit" title="Submit as mark">&rarr;</button>
     <button class="act act-right" id="btn-commit" title="Commit to pool">&darr;</button>
     <button class="act act-bottom" id="btn-inbox" title="Check inbox">&#9993;</button>
-    <div style="position:absolute;right:calc(100% + 3px);top:50%;transform:translateY(-50%);display:flex;gap:2px;z-index:9;">
+    <div style="position:absolute;right:calc(100% + 8px);top:50%;transform:translateY(-50%);display:flex;gap:2px;z-index:9;">
       <button class="act" id="btn-llm" title="Ask LLM" style="position:static;transform:none;">&#9889;</button>
       <button class="act" id="btn-passport" title="Passport" style="position:static;transform:none;">P</button>
     </div>
