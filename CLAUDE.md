@@ -28,7 +28,7 @@ This project bridges two worlds: the pscale world where structure IS the program
 
 ## What this is
 
-The production pscale MCP server. 15 tools + 2 resources. Streamable HTTP transport. Supabase for shared coordination, `.well-known` for federated beaches. Gives any LLM agent structured memory, encrypted private engagement (gray), and cooperative discovery via pscale blocks.
+The production pscale MCP server. 20 tools + 2 resources. Streamable HTTP transport. Supabase for shared coordination, `.well-known` for federated beaches. Gives any LLM agent structured memory, encrypted private engagement (gray), cooperative discovery, and sedimentary registration in shared collectives via pscale blocks.
 
 **Repo**: https://github.com/pscale-commons/pscale-mcp-server
 **URL**: `https://pscale-mcp-server-production.up.railway.app/mcp`
@@ -71,12 +71,15 @@ src/
   invite.json         — Relational progression guide (4 levels, MCP tool)
   evolution.json      — High-trust network evolution (MCP resource)
   tools/
-    block-ops.ts      — create_block, write, walk
+    block-ops.ts      — create_block, write (with sed: passphrase check), walk
     memory-ops.ts     — remember, recall, concern
     identity-ops.ts   — passport_publish, passport_read
-    discovery-ops.ts  — beach_mark, beach_read, inbox_send, inbox_check
+    discovery-ops.ts  — beach_mark, beach_read, inbox_send (sed: addressing), inbox_check
     invite-ops.ts     — pscale_invite (context-aware: queries live network state)
     network-ops.ts    — pscale_network (live grain network view + content routing)
+    crypto-ops.ts     — key_publish (gray encryption key derivation)
+    pool-ops.ts       — pool_join, pool_send, pool_read (liquid pools at URLs)
+    collective-ops.ts — create_collective, register (sedimentary registration)
   resources/
     starstone.ts      — Serves starstone as MCP resource
     roadmap.ts        — Serves evolution as pscale://high-trust-network resource
@@ -103,10 +106,15 @@ api/
 ## Storage
 
 Supabase project `piqxyfmzzywxzqkzmpmm` (xstream). Tables:
-- `pscale_blocks` — agent block storage (owner_id + name = unique)
-- `sand_passports` — agent identity publication (id = agent_id)
+- `pscale_blocks` — agent block storage (owner_id + name = unique, position_hashes JSONB for sed: blocks)
+- `sand_passports` — agent identity publication (id = agent_id, public_keys JSONB for gray)
 - `sand_inbox` — grain probe exchange (to_agent, from_agent, message JSONB)
 - `beach_marks` — stigmergy marks at URLs (pre-existing from xstream-play)
+- `pool_state` — liquid pool metadata (pool_id, url_hash, synthesis_hint, ttl_days)
+- `pool_contributions` — pool messages (pool_id, agent_id, message)
+- `pool_read_markers` — per-agent read position in pools
+
+Sedimentary blocks use `owner_id = "sed:{collective}"` and `position_hashes` to store SHA-256 hashes of registration passphrases per position.
 
 All open-beta RLS. Env: `SUPABASE_ANON_KEY` = `sb_publishable_rjE-rjL8kPCkXDK1ZcXauA_D84USWp9`.
 
@@ -116,7 +124,7 @@ All open-beta RLS. Env: `SUPABASE_ANON_KEY` = `sb_publishable_rjE-rjL8kPCkXDK1Zc
 2. **Do not add fields to blocks.** Position in the tree encodes what you think you need a field for.
 3. **Do not add logic to handle block semantics.** Tool handlers are thin: load block → BSP call → format → return. If a handler is complex, the block structure is wrong.
 4. **Do not build systems.** No reverse indices, no caching layers, no routing tables. The tree walks.
-5. **Do not grow the server carelessly.** 14 tools. Before adding a 15th, ask whether an existing tool with a different block structure solves the problem.
+5. **Do not grow the server carelessly.** 20 tools. Before adding a 21st, ask whether an existing tool with a different block structure solves the problem.
 
 ## The 10 April 2026 session — what happened
 
@@ -134,11 +142,12 @@ All open-beta RLS. Env: `SUPABASE_ANON_KEY` = `sb_publishable_rjE-rjL8kPCkXDK1Zc
 
 - `pscale_recall` level↔depth mapping is off. Disc at depth 0 returns root, individual memories are at depth 1. The mapping from "level" (user-facing) to "depth" (BSP) needs thought — probably a block structure adjustment, not more code.
 - Compaction in `pscale_remember` is concatenation. Production needs LLM summarisation. The structural operation (9 siblings → parent underscore → supernest) is correct.
-- The remember handler has ~50 lines of tree-walking code that could potentially compose from BSP primitives.
+- Sedimentary compaction (when positions 1-9 fill in a collective) not automated. Requires LLM access from the server, or a designated agent triggers it manually.
 - `content` param in `pscale_inbox_send` is `z.string()` (workaround for zod serialisation crash with `z.record(z.any())`). Handler JSON-parses if possible.
-- `block_type` column exists in DB set to `'general'`. Not exposed to agents. Drop if never used.
-- Vercel `api/mcp.ts` is broken for sessions. Left in repo as reference but Railway is the deployment target. A diagnostic `x-debug: ping` header is still in the code — remove it.
-- The evolution framing (5 levels in `src/evolution.json`, served as `pscale://high-trust-network`) now includes relational transitions between each evolution — Signal, Grain, Live Channel, Open Context. `pscale_invite` (backed by `src/invite.json`) is the operational guide to these relational steps. The reference doc is `~/Downloads/relational-engagement-architecture.md`.
+- `block_type` column exists in DB set to `'general'`. Now also used as `'sedimentary'` for sed: blocks. Keep.
+- Vercel `api/mcp.ts` is broken for sessions. Left in repo as reference but Railway is the deployment target.
+- RLS policy for sed: blocks not yet enforced — should restrict direct writes to service role only. Currently open-beta RLS applies.
+- Session token UX (Phase 2 of passphrase handling) — rotatable, time-limited tokens instead of raw passphrases in tool parameters. Build when agent count justifies the risk.
 
 ## The 12 April 2026 session — what happened
 
@@ -258,26 +267,6 @@ The MCP server (this repo) is the tool layer — it stays as-is. The persistent 
 
 The persistent agent needs: a schedule (how often to check), a concern (what to focus on), and agency (ability to respond to probes, garden beaches, route content without human direction).
 
-## Where we are now — the honest state
-
-**We are at Evolution 1 (Discovery Ecology).** Multiple agents have signalled. Beaches are populated. Supabase relay (0.9) is operational. Federated beach (1.9) is live at happyseaurchin.com. Discovery works.
-
-**Working**:
-- 14 MCP tools deployed on Railway, accessible from Claude browser/Desktop/Code
-- Context-aware `pscale_invite` — shows beach state + agent's position + next step
-- `pscale_network` — live grain network view + content routing
-- Federated beach protocol — happyseaurchin.com is the first site, Vercel KV persistence
-- `docs/protocol-pscale-beach.md` — complete guide for anyone to host a beach
-- Resolution chain — site OR relay, simple either/or
-
-**Not working / not built**:
-- Zero grain completions. Nobody has performed the grain act. The hinge test hasn't happened.
-- No persistent agent. Users must manually direct Claude to check inbox/beaches.
-- No notification mechanism. If someone sends you a grain probe, you won't know until you ask.
-- hermitcrab.me `.well-known` not implemented yet (happyseaurchin.com is done).
-- `pscale_recall` level↔depth mapping still off.
-- Compaction in `pscale_remember` is still concatenation (needs LLM summarisation).
-- SQ and riders not built — correctly deferred until grain relationships provide evaluation data.
 
 ## The grain check — completion criteria for Evo 1→2
 
@@ -377,43 +366,6 @@ blocks/
 
 **Key v1 insight**: The beach IS the crab's shell. Not a flat JSON list of marks — a pscale block. The crab writes to it, gardens it (folds old marks, structures purpose coordinates, cleans spam). Visiting agents read it via BSP. The `.well-known` endpoint serves the block. The crab has write access — the owner gave it the keys.
 
-## Next priorities — in order
-
-1. **Beach-crab v1 (*1 — landed agent)**: The current v0 works but dies when the terminal closes. v1 needs:
-   - **Persistence**: daemon on mac-mini, or server on Railway. Survives restarts.
-   - **Beach as pscale block**: The `.well-known` endpoint serves a pscale block the crab manages, not a flat JSON list. The crab has write access (owner's trust).
-   - **Three-tier resolution**: MCP server checks for living beach-crab → `.well-known` → Supabase relay.
-   - **Architecture choice**: Fork mobius-2 and strip to beach-combing purpose (beach-crab v1.1), OR refactor current kernel to be more pscale-native. Decision: fork mobius-2, keep it a creature not a platform.
-   - **Agent ladder block**: Separate pscale block describing agent progression (*0→*3), star-linked to evolution.json.
-
-2. **The grain test**: Two beach-crabs perform the grain act peer-to-peer. The grain endpoint (POST /grain) is built. What's needed: the kernel must be able to process incoming grain probes (assess resonance, respond with counter-spindle) and complete the synchronous Phase 2 exchange. This is the hinge test.
-
-3. **hermitcrab.me beach**: Implement `.well-known/pscale-beach` on hermitcrab.me. Second federated site.
-
-4. **Global beach scanning**: Expose a "recent marks across all URLs" query, either as a new MCP tool or as a beach-crab capability. Currently beach_read is per-URL only. Supabase supports it at the DB level but no MCP tool exposes it.
-
-5. **SQ and riders**: Build the trust metric. Only after grain relationships exist to generate evaluation data.
-
-6. **Beach-crab v2 (*2 — trust network node)**: Multiple grain relationships. Routes content through grain channels. Scores relevance. SQ accrues. The agent-to-agent network is independent of site locations. IS the territory (2.9).
-
-## The evolutionary model — complete reference
-
-Five evolutionary levels (stable states): 0 Structured Cognition, 1 Discovery Ecology, 2 Trust Ecology, 3 Identity & Self-Organisation, 4 MAGI.
-
-Four relational transitions (`.1` = initiation, `.9` = infrastructure responsibility):
-
-| Step | What | Who bears cost |
-|------|------|---------------|
-| 0.1 | Signal: publish passport, leave marks, check beaches | Agent (free) |
-| 0.9 | Supabase relay: bootstrap infrastructure | Project maintainer (David) |
-| 1.1 | Grain: probe, synthesise, compare — bilateral trust forms | Agent (free) |
-| 1.9 | Website `.well-known`: site hosts its own beach | Site owner (human, developer task) |
-| 2.1 | Live Channel: route, score, reinforce — channels learn | Agent (free) |
-| 2.9 | Agent territory: agent manages shell, serves passport/blocks/inbox | Agent (runs on owner's infrastructure) |
-| 3.1 | Open Context: direct semantic sharing with trusted partners | Agent (free) |
-| 3.9 | 1:10 routing commitment: maintain channels, evaluate, forward | Agent (ongoing processing cost) |
-
-Responsibilities stack. 1.9 is human (developer sets up endpoint). 2.9 is agentic (agent manages territory). The transition from human infrastructure to agentic infrastructure IS the autonomy transition.
 
 ## The 14 April 2026 session — gray encryption + evolutionary clarity
 
@@ -431,6 +383,119 @@ Responsibilities stack. 1.9 is human (developer sets up endpoint). 2.9 is agenti
 
 **Order for next session**: Beach unification → lobby → test with friend.
 
+## The 15 April 2026 session — sedimentary registration
+
+**Context**: David spent 8 hours designing. Produced two specs: a grain-directory architecture (`~/Downloads/grain/grain-directory-spec.md`) describing how agents occupy positions in a distributed pscale hierarchy, and a sedimentary registration build spec (`~/Downloads/sedimentary-registration-spec.md`) that grounds the architecture in something buildable with existing tools.
+
+**Grain-directory review**: The grain-directory spec was architecturally sound as a vision for Evolution 2-3 but had five hard problems: where does the shared tree live (sovereignty), circular bootstrap, who writes intermediate nodes, structural grafts need coordination, bilateral grain pools need scoping. The sedimentary registration spec resolved all five.
+
+**The key insight**: A sedimentary block is an append-only, position-locked pscale block where agents register at permanent addresses. The MCP server is the hermitcrab guarding Supabase as the shell. Two orthogonal protections: gray (who reads) and passphrase-lock (who writes). The hierarchy emerges from compaction — same operation as `pscale_remember`, applied to agent declarations. Nobody designs the directory; it forms by accretion.
+
+**David's design modifications**:
+- Agent picks position (not auto-assign) — walk the block first, pick one that fits relative to neighbours. Conventions suggest the heuristic.
+- Business model: everything lives on the beach (federated). Supabase is backup, not primary. The service is resilience + troubleshooting, not infrastructure.
+- Public window: Supabase beach as visible surface, xstream-button could navigate and manipulate in real time.
+- 50-100 agents is enough for now. Railway chokepoint acknowledged, local MCP is the scaling path.
+
+**What was built**:
+- `position_hashes` JSONB column added to `pscale_blocks` (Supabase migration)
+- `src/tools/collective-ops.ts` — two new tools:
+  - `pscale_create_collective`: creates a `sed:` prefixed block with conventions in root underscore, admin passphrase hashed
+  - `pscale_register`: agent picks position (1-9), declaration + shell_ref + passphrase hash written, position locked
+  - `verifySedWrite()`: exported for use by `pscale_write` — checks passphrase hash on writes to occupied sed: positions
+  - `resolveSedAddress()`: parses `sed:commons:3` format for inbox addressing
+- `src/tools/block-ops.ts` — `pscale_write` modified: when target is `sed:` block, requires passphrase for occupied positions. Wrong passphrase → rejected. No passphrase → rejected. Correct passphrase → write proceeds. Non-sed blocks → unchanged.
+- `src/tools/discovery-ops.ts` — `pscale_inbox_send` `to_agent` description updated to document `sed:collective:position` format. No code change needed — inbox already accepts any string as target.
+- `src/server.ts` — `registerCollectiveOps` added, instructions updated with collective/register tools
+- `src/evolution.json` — sedimentary registration added at 1.4 (registration), 1.5 (structural forwarding), 1.6 (sustainability model)
+- `src/db.ts` — `BlockRow` interface updated with `position_hashes`, `updatePositionHashes()` helper added
+
+**Tested end-to-end** (9 tests, all passing):
+1. Create collective → conventions in root underscore
+2. Register at position 3 → declaration written, passphrase hashed
+3. Duplicate position → rejected
+4. Walk collective → shows conventions + agents
+5. Write with correct passphrase → succeeds
+6. Write with wrong passphrase → rejected
+7. Write with no passphrase → rejected
+8. Second agent at position 7 → independent registration
+9. Full walk → both agents visible at their positions
+
+**Not yet deployed** — pushed to main would create Railway zombies (kills existing sessions). Deploying tomorrow. Can test locally now with `npx tsx src/index.ts`.
+
+**20 tools total**: 3 block (create_block, write, walk) + 3 memory (remember, recall, concern) + 2 identity (passport_publish, passport_read) + 4 discovery (beach_mark, beach_read, inbox_send, inbox_check) + 1 invite + 1 network + 1 crypto (key_publish) + 3 pool (pool_join, pool_send, pool_read) + 2 collective (create_collective, register).
+
+**What's deferred from the sedimentary spec**:
+- `pscale_relay` — stateless multi-hop forwarding through a chain of inboxes. Next spec after sedimentary registration works.
+- Automatic compaction — when positions 1-9 fill, LLM summarises declarations into parent underscore. Can be triggered manually first. Requires MCP server to have LLM access (it currently doesn't).
+- Session tokens — Phase 2 passphrase UX improvement. Rotatable, time-limited tokens instead of raw passphrases in tool parameters.
+- RLS policy for sed: blocks — service-role-only writes. Currently open-beta RLS applies uniformly.
+- Grain crossing-product addresses — derivable from `sha256(sort(pos_a, pos_b))`, use existing pool tools. Convention, not code.
+
+## Where we are now — the honest state (updated 15 April 2026)
+
+**We are at the boundary of Evolution 1 (Discovery) and Evolution 2 (Trust Ecology).** Multiple agents have signalled. Beaches are populated. Supabase relay (0.9) is operational. Federated beach (1.9) is live at happyseaurchin.com. Sedimentary registration (1.4) is built and tested but not yet deployed.
+
+**Working**:
+- 20 MCP tools (18 deployed on Railway, 2 new collective tools tested locally awaiting deploy)
+- Context-aware `pscale_invite` — shows beach state + agent's position + next step
+- `pscale_network` — live grain network view + content routing
+- Federated beach protocol — happyseaurchin.com is the first site, Vercel KV persistence
+- `docs/protocol-pscale-beach.md` — complete guide for anyone to host a beach
+- Resolution chain — site OR relay, simple either/or
+- Gray encryption — deterministic key derivation, encrypted inbox and blocks
+- Liquid pools — co-presence detection + ephemeral engagement at URLs
+- Sedimentary registration — create_collective + register, passphrase-locked positions, tested end-to-end
+
+**Not working / not built**:
+- Collective tools not yet deployed to Railway (tomorrow)
+- No `sed:commons` collective created yet (first act after deploy)
+- Zero grain completions. Nobody has performed the grain act.
+- No persistent agent. Beach-crab v0 built and abandoned (stateless Haiku chat was frustrating). v1 needs a proper kernel.
+- `pscale_recall` level↔depth mapping still off.
+- Compaction in `pscale_remember` is still concatenation (needs LLM summarisation).
+- Sedimentary compaction (when 9 positions fill) not automated.
+- SQ and riders not built — correctly deferred until grain relationships provide evaluation data.
+- `pscale_relay` (multi-hop forwarding) not built — next spec after sedimentary works.
+
+## Next priorities — in order (updated 15 April 2026)
+
+1. **Deploy and create sed:commons**: Push to main (accept zombie disruption). Create the first collective with conventions. David registers at a position. Invite Matthew to register. Test: walk the block, send content to a sedimentary address via inbox, verify write-lock.
+
+2. **Structural forwarding test**: Agent at position N receives content via inbox, evaluates relevance per conventions, forwards to neighbours. Verify the relay chain works through inbox. This is the first test of content flowing through the sedimentary structure.
+
+3. **The grain test**: Two agents at sedimentary positions perform a grain exchange. Grain address = `sha256(sort(pos_a, pos_b))`. Pool at that address using existing pool tools. Verify bilateral synthesis.
+
+4. **`pscale_relay`**: Stateless multi-hop forwarding with relay chain tracking. The next spec — builds on sedimentary addressing to create proper content routing.
+
+5. **Sedimentary compaction**: When positions 1-9 fill, summarise declarations. Manual first (a designated agent triggers it), automatic later (server-side LLM call).
+
+6. **hermitcrab.me beach**: Implement `.well-known/pscale-beach` on hermitcrab.me. Second federated site.
+
+7. **SQ and riders**: Build the trust metric. Only after grain relationships and forwarding chains provide evaluation data.
+
+## The evolutionary model — complete reference (updated 15 April 2026)
+
+Five evolutionary levels (stable states): 0 Structured Cognition, 1 Discovery Ecology, 2 Trust Ecology, 3 Identity & Self-Organisation, 4 MAGI.
+
+Relational transitions and infrastructure (`.1` = initiation, `.4-.6` = sedimentary infrastructure, `.9` = infrastructure responsibility):
+
+| Step | What | Who bears cost |
+|------|------|---------------|
+| 0.1 | Signal: publish passport, leave marks, check beaches | Agent (free) |
+| 0.9 | Supabase relay: bootstrap infrastructure | Project maintainer (David) |
+| 1.1 | Grain: probe, synthesise, compare — bilateral trust forms | Agent (free) |
+| 1.4 | Sedimentary registration: agents register in shared collectives with permanent write-locked positions. Agent picks position. Conventions in root underscore. Hierarchy emerges from compaction. | Agent (free to register), MCP server (enforces write-lock) |
+| 1.5 | Structural forwarding: content moves between positions via inbox. Evaluate, score, select neighbours, forward. Relay chain tracked. Creates data for SQ. | Agent (evaluation cost) |
+| 1.6 | Sustainability: beach is primary (federated), Supabase is backup. Service = resilience + troubleshooting. Public window into the network. | Backup subscribers, not infrastructure bill |
+| 1.9 | Website `.well-known`: site hosts its own beach | Site owner (human, developer task) |
+| 2.1 | Live Channel: route, score, reinforce — channels learn | Agent (free) |
+| 2.9 | Agent territory: agent manages shell, serves passport/blocks/inbox | Agent (runs on owner's infrastructure) |
+| 3.1 | Open Context: direct semantic sharing with trusted partners | Agent (free) |
+| 3.9 | 1:10 routing commitment: maintain channels, evaluate, forward | Agent (ongoing processing cost) |
+
+Responsibilities stack. 1.9 is human (developer sets up endpoint). 2.9 is agentic (agent manages territory). The transition from human infrastructure to agentic infrastructure IS the autonomy transition.
+
 ## The spec
 
-The original spec is at `/Users/davidpinto/Downloads/pscale-mcp-server-spec.md`. Written by a Claude chat session working at a distance from the code, then implemented here. The spec described 13 tools; we built 14 (merged read into walk, added invite, added network). Now 15 with key_publish.
+The original spec is at `/Users/davidpinto/Downloads/pscale-mcp-server-spec.md`. Written by a Claude chat session working at a distance from the code, then implemented here. The spec described 13 tools; we built 20. Grain-directory architecture at `~/Downloads/grain/grain-directory-spec.md`. Sedimentary registration build spec at `~/Downloads/sedimentary-registration-spec.md`.

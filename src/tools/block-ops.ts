@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { bsp, writeAt, fmtResult, fmtDir, type Block, type BspResult } from '../bsp.js';
 import { getBlock, upsertBlock, listBlocks } from '../db.js';
 import { selfEncrypt, decryptBlockNodes } from '../crypto.js';
+import { verifySedWrite } from './collective-ops.js';
 
 // ── Exported handler functions (used by kernel + legacy registration) ──
 
@@ -37,10 +38,21 @@ export async function handleCreateBlock(
 }
 
 export async function handleWrite(
-  { agent_id, name, address, content, secret }: {
-    agent_id: string; name: string; address: string; content: string; secret?: string;
+  { agent_id, name, address, content, secret, passphrase }: {
+    agent_id: string; name: string; address: string; content: string; secret?: string; passphrase?: string;
   },
 ) {
+  // Sedimentary block write protection
+  if (name.startsWith('sed:') || agent_id.startsWith('sed:')) {
+    const collective = name.startsWith('sed:') ? name.slice(4) : agent_id.slice(4);
+    const check = await verifySedWrite(collective, address, passphrase);
+    if (!check.allowed) {
+      return {
+        content: [{ type: 'text' as const, text: check.error || 'Write denied.' }],
+      };
+    }
+  }
+
   const row = await getBlock(agent_id, name);
   if (!row) {
     return {
@@ -177,6 +189,10 @@ export function registerBlockOps(server: McpServer) {
         .string()
         .optional()
         .describe('Your passphrase or block hash. When provided, encrypts the content. Only you can decrypt it with the same secret.'),
+      passphrase: z
+        .string()
+        .optional()
+        .describe('Required when writing to an occupied position in a sedimentary (sed:) block. The passphrase you used at registration. Sensitive — never repeat in conversation.'),
     },
     handleWrite,
   );

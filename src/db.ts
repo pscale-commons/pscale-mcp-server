@@ -24,6 +24,7 @@ export interface BlockRow {
   name: string;
   block_type: string;
   block: Record<string, any>;
+  position_hashes: Record<string, string>;
   created_at: string;
   updated_at: string;
 }
@@ -64,6 +65,20 @@ export async function upsertBlock(
 
   if (error) throw new Error(`DB error: ${error.message}`);
   return data as BlockRow;
+}
+
+export async function updatePositionHashes(
+  ownerId: string,
+  name: string,
+  hashes: Record<string, string>,
+): Promise<void> {
+  const { error } = await getClient()
+    .from('pscale_blocks')
+    .update({ position_hashes: hashes, updated_at: new Date().toISOString() })
+    .eq('owner_id', ownerId)
+    .eq('name', name);
+
+  if (error) throw new Error(`DB error: ${error.message}`);
 }
 
 export async function listBlocks(

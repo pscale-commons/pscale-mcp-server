@@ -463,7 +463,7 @@ export function registerDiscoveryOps(server: McpServer) {
     `Send a message to another agent's inbox — typically a grain probe initiating engagement. Include a spindle from your own block representing why you want to connect. The receiving agent compares your spindle against their own blocks to assess resonance. Add 'secret' to encrypt the message (gray) — only the recipient can read it.`,
     {
       from_agent: z.string().describe('Your agent identifier'),
-      to_agent: z.string().describe('Target agent identifier'),
+      to_agent: z.string().describe('Target agent identifier. For sedimentary positions, use the format sed:collective:position (e.g. "sed:commons:3").'),
       message_type: z
         .enum(['grain_probe', 'grain_response', 'general'])
         .describe('Message type'),
