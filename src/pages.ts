@@ -191,7 +191,8 @@ export function beachPage(): string {
   .cluster-head { font-size: 11px; color: var(--text-2); margin-bottom: 8px; font-family: var(--mono); max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cluster-head .count { color: var(--text-3); margin-left: 6px; }
 
-  .mark { position: absolute; width: 220px; padding: 10px 12px; background: var(--bg-surface); border: 0.5px solid var(--border-soft); border-radius: var(--radius); }
+  .mark { position: absolute; width: 220px; padding: 10px 12px; background: var(--bg-surface); border: 0.5px solid var(--border-soft); border-radius: var(--radius); max-height: 72px; overflow: hidden; transition: max-height 0.3s ease; }
+  .mark.expanded { max-height: 300px; z-index: 5; }
   .mark-purpose { font-size: 12px; color: var(--text-1); line-height: 1.45; margin-bottom: 6px; word-wrap: break-word; }
   .mark-meta { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-3); }
   .mark-meta .h { font-family: var(--mono); }
@@ -267,7 +268,16 @@ export function beachPage(): string {
   .visitor-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); flex-shrink: 0; }
   .visitor-label { font-size: 9px; color: var(--text-3); font-family: var(--mono); }
 
-  .mark, .sed, .liquid, .agent, .cluster-head { cursor: pointer; }
+  .passport-card { position: absolute; width: 220px; padding: 12px 14px; background: var(--bg-surface); border: 0.5px solid var(--border-soft); border-radius: var(--radius); border-left: 3px solid var(--text-3); max-height: 80px; overflow: hidden; transition: max-height 0.3s ease, box-shadow 0.15s; }
+  .passport-card.expanded { max-height: 400px; box-shadow: 0 4px 16px rgba(0,0,0,0.08); z-index: 5; }
+  .passport-card .pc-name { font-size: 11px; font-family: var(--mono); color: var(--text-2); margin-bottom: 4px; }
+  .passport-card .pc-desc { font-size: 12px; color: var(--text-1); line-height: 1.45; margin-bottom: 6px; }
+  .passport-card .pc-detail { font-size: 10px; color: var(--text-3); line-height: 1.5; }
+  .passport-card .pc-label { font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.05em; }
+  .passport-card::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 20px; background: linear-gradient(transparent, var(--bg-surface)); pointer-events: none; }
+  .passport-card.expanded::after { display: none; }
+
+  .mark, .sed, .liquid, .agent, .cluster-head, .passport-card { cursor: pointer; }
   .mark:hover, .sed-layer:hover { border-color: var(--border-emph); }
 
   @media (max-width: 600px) {
@@ -667,10 +677,14 @@ function render() {
         card.style.opacity = ageOpacity(days);
         var purpose = m.encrypted
           ? String.fromCharCode(0x25CF).repeat(Math.min(20, Math.max(8, (m.purpose || '').length || 14)))
-          : (m.purpose || '(no purpose)');
+          : (m.purpose || '');
+        var passport = passportMap.get(m.owner);
+        var desc = passport ? passport.description : '';
+        var label = desc || purpose || m.owner;
+        var meta = purpose && desc ? purpose : '';
         card.innerHTML =
-          '<div class="mark-purpose">' + escapeHtml(purpose) + '</div>' +
-          '<div class="mark-meta"><span class="h">' + escapeHtml(m.owner) + '</span><span>' + ageLabel(days) + '</span></div>';
+          '<div class="mark-purpose">' + escapeHtml(label) + '</div>' +
+          '<div class="mark-meta"><span class="h">' + escapeHtml(m.owner) + '</span><span>' + (meta ? escapeHtml(meta) + ' · ' : '') + ageLabel(days) + '</span></div>';
         card.onclick = function() { openMarkDetail(m); };
         el.appendChild(card);
       });
@@ -727,6 +741,32 @@ function render() {
       '<div class="liquid-head">' + escapeHtml(lb.id || 'pool') + '</div>' +
       '<div class="liquid-count">' + lb.participantCount + ' in pool</div>' +
       '<div class="liquid-sub">' + lb.contributions + ' contribution' + (lb.contributions !== 1 ? 's' : '') + ', ' + ageLabel(ageDays(lb.last)) + '</div>';
+    canvas.appendChild(el);
+  });
+
+  // Render passports as standalone cards
+  allData.passports.forEach(function(p) {
+    if (!p.description) return;
+    var pos = hashToXY(p.owner, 400, 500);
+    var el = document.createElement('div');
+    el.className = 'passport-card';
+    el.style.left = pos.x + 'px';
+    el.style.top = pos.y + 'px';
+    el.style.transform = 'rotate(' + tilt(p.owner + 'passport') + ')';
+    var html = '<div class="pc-name">' + escapeHtml(p.owner) + '</div>' +
+      '<div class="pc-desc">' + escapeHtml(p.description) + '</div>';
+    if (p.offers) html += '<div class="pc-detail"><span class="pc-label">offers </span>' + escapeHtml(p.offers) + '</div>';
+    if (p.needs) html += '<div class="pc-detail"><span class="pc-label">needs </span>' + escapeHtml(p.needs) + '</div>';
+    el.innerHTML = html;
+    el.onclick = function(e) {
+      e.stopPropagation();
+      if (el.classList.contains('expanded')) {
+        el.classList.remove('expanded');
+      } else {
+        document.querySelectorAll('.passport-card.expanded').forEach(function(c) { c.classList.remove('expanded'); });
+        el.classList.add('expanded');
+      }
+    };
     canvas.appendChild(el);
   });
 
