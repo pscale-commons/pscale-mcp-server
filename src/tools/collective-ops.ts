@@ -388,15 +388,9 @@ export function registerCollectiveOps(server: McpServer) {
     handleCreateCollective,
   );
 
-  server.tool(
-    'pscale_route',
-    `Compute routing targets from a sedimentary address. Returns siblings (same group) and lift targets (cross-group bridges). Pure arithmetic — no evaluation, no semantics. Use this to know WHO you can forward to, then use your own judgement to decide which targets are relevant for a given probe.`,
-    {
-      collective: z.string().describe("Name of the collective"),
-      address: z.string().describe("Your sedimentary address (e.g. '3', '34', '16234')"),
-    },
-    handleRoute,
-  );
+  // pscale_route is NOT exposed as a tool — it's internal infrastructure.
+  // computeRouteTargets() and handleRoute() are exported for use by
+  // the Level 2 forwarding logic, not for agents to call directly.
 
   server.tool(
     'pscale_register',
