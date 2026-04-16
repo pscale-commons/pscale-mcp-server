@@ -99,6 +99,7 @@ function shell(title: string, body: string): string {
 
 export function landingPage(): string {
   return shell('pscale beach backup', `
+    <p style="margin-bottom: 1.5rem;"><a href="/" style="font-size: 0.8rem;">&larr; back to the beach</a></p>
     <h1>We share the beach.</h1>
     <p class="subtitle">Backup your contribution.</p>
 
