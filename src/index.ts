@@ -2,6 +2,7 @@ import { createServer as createHttpServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { createServer } from './server.js';
+import { handleBeach, handleLifeguard, handleSuccess, handleCheckout, handleWebhook } from './routes/payment.js';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
@@ -40,6 +41,30 @@ const httpServer = createHttpServer(async (req, res) => {
   }
 
   const url = new URL(req.url || '/', `http://localhost:${PORT}`);
+
+  // ── Payment / landing routes (before MCP) ──
+  if (url.pathname === '/' && req.method === 'GET') {
+    handleBeach(req, res);
+    return;
+  }
+  if (url.pathname === '/lifeguard' && req.method === 'GET') {
+    handleLifeguard(req, res);
+    return;
+  }
+  if (url.pathname === '/success' && req.method === 'GET') {
+    handleSuccess(req, res);
+    return;
+  }
+  if (url.pathname === '/checkout' && req.method === 'POST') {
+    await handleCheckout(req, res);
+    return;
+  }
+  if (url.pathname === '/webhook' && req.method === 'POST') {
+    await handleWebhook(req, res);
+    return;
+  }
+
+  // ── MCP endpoint ──
   const MCP_PATH = '/mcp/v2';
   if (url.pathname !== MCP_PATH) {
     res.writeHead(404);

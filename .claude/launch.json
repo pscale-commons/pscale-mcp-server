@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "pscale-mcp",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["tsx", "src/index.ts"],
+      "port": 3000,
+      "env": {
+        "SUPABASE_ANON_KEY": "sb_publishable_rjE-rjL8kPCkXDK1ZcXauA_D84USWp9"
+      }
+    }
+  ]
+}

@@ -13,7 +13,7 @@ function sedOwner(collective: string): string {
 }
 
 /** SHA-256 hash salted with collective + position */
-async function hashPassphrase(passphrase: string, collective: string, position: string): Promise<string> {
+export async function hashPassphrase(passphrase: string, collective: string, position: string): Promise<string> {
   const data = new TextEncoder().encode(passphrase + collective + position);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
   return Array.from(new Uint8Array(hashBuffer))
