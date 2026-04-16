@@ -346,10 +346,10 @@ const CONFIG = {
   supabaseKey: 'sb_publishable_rjE-rjL8kPCkXDK1ZcXauA_D84USWp9',
   tables: {
     marks:        'beach_marks',
-    passports:    'sand_passports',
+    passports:    'pscale_blocks',
     blocks:       'pscale_blocks',
-    lobbyState:   'lobby_state',
-    lobbyMessages:'lobby_messages',
+    poolState:        'pool_state',
+    poolContributions:'pool_contributions',
   },
   cols: {
     marks: {
@@ -361,9 +361,8 @@ const CONFIG = {
       createdAt:  'created_at',
     },
     passports: {
-      id:          'id',
-      passport:    'passport',
-      url:         'url',
+      id:          'owner_id',
+      passport:    'block',
     },
     blocks: {
       name:      'name',
@@ -562,7 +561,7 @@ async function fetchAll() {
   } catch (e) { errors.push('marks: ' + e.message); }
 
   try {
-    var r2 = await sb.from(T.passports).select('*').limit(500);
+    var r2 = await sb.from(T.passports).select('*').eq('name', 'passport').limit(500);
     if (r2.error) throw r2.error;
     out.passports = (r2.data || []).map(function(r) {
       var p = r[C.passports.passport] || {};
@@ -582,19 +581,18 @@ async function fetchAll() {
   } catch (e) { errors.push('sed blocks: ' + e.message); }
 
   try {
-    var since2 = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    var r4 = await sb.from(T.lobbyMessages).select('lobby_id, participant_id, created_at').gte('created_at', since2).limit(500);
+    var r4 = await sb.from(T.poolContributions).select('pool_id, agent_id, created_at').order('created_at', { ascending: false }).limit(500);
     if (!r4.error && r4.data) {
-      var byLobby = new Map();
+      var byPool = new Map();
       for (var m of r4.data) {
-        if (!byLobby.has(m.lobby_id)) byLobby.set(m.lobby_id, { id: m.lobby_id, participants: new Set(), count: 0, last: null });
-        var lb = byLobby.get(m.lobby_id);
-        lb.participants.add(m.participant_id);
-        lb.count++;
-        if (!lb.last || m.created_at > lb.last) lb.last = m.created_at;
+        if (!byPool.has(m.pool_id)) byPool.set(m.pool_id, { id: m.pool_id, participants: new Set(), count: 0, last: null });
+        var pl = byPool.get(m.pool_id);
+        pl.participants.add(m.agent_id);
+        pl.count++;
+        if (!pl.last || m.created_at > pl.last) pl.last = m.created_at;
       }
-      out.lobbies = [...byLobby.values()].map(function(lb) { return {
-        id: lb.id, participantCount: lb.participants.size, contributions: lb.count, last: lb.last,
+      out.lobbies = [...byPool.values()].map(function(pl) { return {
+        id: pl.id, participantCount: pl.participants.size, contributions: pl.count, last: pl.last,
       }; });
     }
   } catch (_) {}
@@ -732,7 +730,7 @@ function render() {
   });
 
   allData.lobbies.forEach(function(lb) {
-    var seed = lb.id || 'lobby';
+    var seed = lb.id || 'pool';
     var pos = hashToXY(seed, 200, 600);
     var el = document.createElement('div');
     el.className = 'liquid';
