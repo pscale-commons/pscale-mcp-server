@@ -51,7 +51,17 @@ const httpServer = createHttpServer(async (req, res) => {
   // ── Static assets ──
   if (url.pathname === '/widget.js' && req.method === 'GET') {
     try {
-      const js = readFileSync(join(__dirname, 'public', 'widget.js'), 'utf-8');
+      // Try multiple locations: __dirname/public, src/public, cwd/src/public
+      let js = '';
+      const candidates = [
+        join(__dirname, 'public', 'widget.js'),
+        join(process.cwd(), 'src', 'public', 'widget.js'),
+        join(process.cwd(), 'dist', 'public', 'widget.js'),
+      ];
+      for (const p of candidates) {
+        try { js = readFileSync(p, 'utf-8'); break; } catch {}
+      }
+      if (!js) throw new Error('widget.js not found');
       res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=300' });
       res.end(js);
     } catch {
