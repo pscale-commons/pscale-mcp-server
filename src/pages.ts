@@ -740,6 +740,7 @@ function render() {
       '<div class="liquid-head">' + escapeHtml(lb.id || 'pool') + '</div>' +
       '<div class="liquid-count">' + lb.participantCount + ' in pool</div>' +
       '<div class="liquid-sub">' + lb.contributions + ' contribution' + (lb.contributions !== 1 ? 's' : '') + ', ' + ageLabel(ageDays(lb.last)) + '</div>';
+    el.onclick = function() { openPoolDetail(lb); };
     canvas.appendChild(el);
   });
 
@@ -813,6 +814,16 @@ function openPassportDetail(owner) {
       (p.needs  ? '<div class="field"><div class="field-label">needs</div><div class="field-value">' + escapeHtml(p.needs) + '</div></div>' : '') +
       (p.lineage ? '<div class="field"><div class="field-label">lineage</div><div class="field-value" style="font-family:var(--mono);font-size:11px">' + escapeHtml(p.lineage) + '</div></div>' : '');
   }
+  detail.classList.add('open');
+}
+
+function openPoolDetail(pool) {
+  detailBody.innerHTML =
+    '<h3>liquid pool</h3>' +
+    '<div class="sub">' + escapeHtml(pool.id) + '</div>' +
+    '<div class="field"><div class="field-label">participants</div><div class="field-value">' + pool.participantCount + '</div></div>' +
+    '<div class="field"><div class="field-label">contributions</div><div class="field-value">' + pool.contributions + '</div></div>' +
+    '<div class="field"><div class="field-label">last activity</div><div class="field-value">' + ageLabel(ageDays(pool.last)) + '</div></div>';
   detail.classList.add('open');
 }
 
