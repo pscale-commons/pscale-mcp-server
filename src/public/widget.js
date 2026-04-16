@@ -203,16 +203,16 @@ function createWidget() {
   .root { position: fixed; pointer-events: auto; }
 
   /* ── Central button ── */
-  .center { position: relative; width: 48px; height: 48px; }
+  .center { position: relative; width: 44px; height: 44px; }
   .main-btn {
-    width: 48px; height: 48px; border-radius: 50%;
-    border: 1px solid rgba(60,50,40,0.15); background: #fff;
-    font-size: 18px; font-weight: 600; cursor: pointer;
+    width: 44px; height: 44px; border-radius: 50%;
+    border: none; background: #1a1a1a;
+    font-size: 17px; font-weight: 600; cursor: pointer;
     display: flex; align-items: center; justify-content: center;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.08); transition: all 0.15s;
-    position: relative; z-index: 10; color: #2c2823;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.15); transition: all 0.15s;
+    position: relative; z-index: 10; color: #fff;
   }
-  .main-btn:hover { border-color: rgba(60,50,40,0.3); box-shadow: 0 2px 12px rgba(0,0,0,0.12); }
+  .main-btn:hover { background: #333; box-shadow: 0 2px 14px rgba(0,0,0,0.2); }
 
   /* ── Grab handle ── */
   .grab {
@@ -240,9 +240,9 @@ function createWidget() {
   .act:hover { border-color: rgba(60,50,40,0.3); background: #f5f2ec; }
   .act.disabled { opacity: 0.3; pointer-events: none; }
 
-  .act-top    { left: 50%; transform: translateX(-50%); bottom: calc(100% + 6px); }
-  .act-right  { top: 50%; transform: translateY(-50%); left: calc(100% + 6px); }
-  .act-bottom { left: 50%; transform: translateX(-50%); top: calc(100% + 6px); }
+  .act-top    { left: 50%; transform: translateX(-50%); bottom: calc(100% + 3px); }
+  .act-right  { top: 50%; transform: translateY(-50%); left: calc(100% + 3px); }
+  .act-bottom { left: 50%; transform: translateX(-50%); top: calc(100% + 3px); }
   .act-left-1 { right: calc(100% + 6px); top: 50%; transform: translateY(-50%) translateX(-16px); }
   .act-left-2 { right: calc(100% + 6px); top: 50%; transform: translateY(-50%) translateX(16px); }
 
@@ -258,12 +258,12 @@ function createWidget() {
   }
   .zone.vis { opacity: 1; pointer-events: auto; transform: scale(1); }
 
-  .zone-tl { right: calc(100% + 40px); bottom: calc(100% + 6px); resize: both; direction: rtl; overflow: auto; }
+  .zone-tl { right: calc(100% + 36px); bottom: calc(100% + 4px); resize: both; direction: rtl; overflow: auto; }
   .zone-tl > * { direction: ltr; }
-  .zone-tr { left: calc(100% + 40px); bottom: calc(100% + 6px); resize: vertical; }
-  .zone-bl { right: calc(100% + 40px); top: calc(100% + 6px); resize: both; direction: rtl; overflow: auto; }
+  .zone-tr { left: calc(100% + 36px); bottom: calc(100% + 4px); resize: vertical; }
+  .zone-bl { right: calc(100% + 36px); top: calc(100% + 4px); resize: both; direction: rtl; overflow: auto; }
   .zone-bl > * { direction: ltr; }
-  .zone-br { left: calc(100% + 40px); top: calc(100% + 6px); resize: vertical; }
+  .zone-br { left: calc(100% + 36px); top: calc(100% + 4px); resize: vertical; }
 
   .zone-label { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #9a9183; margin-bottom: 4px; }
 
@@ -371,12 +371,12 @@ function createWidget() {
     </div>
 
     <!-- Action buttons -->
-    <button class="act act-top" id="btn-submit" title="Submit as mark">&#9650;</button>
-    <button class="act act-right" id="btn-commit" title="Commit to pool">&#9654;</button>
-    <button class="act act-bottom" id="btn-inbox" title="Check inbox">&#9660;</button>
-    <div style="position:absolute;right:calc(100% + 4px);top:50%;transform:translateY(-50%);display:flex;gap:3px;z-index:9;">
+    <button class="act act-top" id="btn-submit" title="Submit as mark">&rarr;</button>
+    <button class="act act-right" id="btn-commit" title="Commit to pool">&darr;</button>
+    <button class="act act-bottom" id="btn-inbox" title="Check inbox">&#9993;</button>
+    <div style="position:absolute;right:calc(100% + 3px);top:50%;transform:translateY(-50%);display:flex;gap:2px;z-index:9;">
       <button class="act" id="btn-llm" title="Ask LLM" style="position:static;transform:none;">&#9889;</button>
-      <button class="act" id="btn-passport" title="Passport" style="position:static;transform:none;">&#9312;</button>
+      <button class="act" id="btn-passport" title="Passport" style="position:static;transform:none;">P</button>
     </div>
 
     <!-- Main button -->
@@ -391,11 +391,11 @@ function createWidget() {
   <div class="settings" id="settings">
     <h3>settings</h3>
     <label for="s-handle">handle</label>
-    <input id="s-handle" type="text" placeholder="your name on the beach">
+    <input id="s-handle" type="text" placeholder="your name on the beach" autocomplete="off">
     <label for="s-pass">passphrase</label>
-    <input id="s-pass" type="password" placeholder="for pool + inbox (session only)">
+    <input id="s-pass" type="text" placeholder="for pool + inbox (session only)" autocomplete="off" style="-webkit-text-security:disc;">
     <label for="s-api">api key (tier 2)</label>
-    <input id="s-api" type="password" placeholder="sk-ant-...">
+    <input id="s-api" type="text" placeholder="sk-ant-..." autocomplete="off" style="-webkit-text-security:disc;">
     <div style="display:flex;gap:6px;margin-top:4px;">
       <button class="s-btn" id="s-save">save</button>
       <button class="s-btn" id="s-help">?</button>
@@ -424,7 +424,7 @@ function createWidget() {
   var sSave = $('#s-save'), sHelp = $('#s-help'), sStatus = $('#s-status');
 
   // ── Position ──
-  var pos = { x: window.innerWidth - 80, y: window.innerHeight - 100 };
+  var pos = { x: 60, y: 60 };
   try {
     var saved = JSON.parse(localStorage.getItem(POS_KEY));
     if (saved) {
@@ -566,9 +566,14 @@ function createWidget() {
     brLabel.textContent = 'pool';
     brContent.innerHTML = '<div class="dots"><span></span><span></span><span></span></div>';
     try {
-      await contributeToPool(text);
+      var result = await contributeToPool(text);
+      if (result && result.error) {
+        brContent.innerHTML = '<div class="hint">' + esc(result.error) + '</div>';
+        return;
+      }
       input.value = '';
-      // Read pool
+      // Small delay then read pool
+      await new Promise(function(r) { setTimeout(r, 500); });
       var items = await readPool();
       var html = '';
       items.forEach(function(p) {
@@ -577,7 +582,7 @@ function createWidget() {
           esc(p.message) +
           '<div class="card-meta">' + esc(p.agent_id) + ' \u00b7 ' + ago(p.created_at) + '</div></div>';
       });
-      brContent.innerHTML = html || '<div class="hint">Pool is quiet</div>';
+      brContent.innerHTML = html || '<div class="hint">Committed. Pool has no other contributions yet.</div>';
     } catch (e) {
       brContent.innerHTML = '<div class="card" style="color:#b91c1c;">' + esc(e.message) + '</div>';
     }
@@ -660,9 +665,9 @@ function createWidget() {
     blMode = 'passport';
     blContent.innerHTML =
       '<div class="passport-form">' +
-      '<input id="pp-desc" placeholder="who you are">' +
-      '<input id="pp-offers" placeholder="what you offer">' +
-      '<input id="pp-needs" placeholder="what you need">' +
+      '<input id="pp-desc" placeholder="who you are" autocomplete="off">' +
+      '<input id="pp-offers" placeholder="what you offer" autocomplete="off">' +
+      '<input id="pp-needs" placeholder="what you need" autocomplete="off">' +
       '<button class="send-btn" id="pp-go">publish</button>' +
       '</div>';
     shadow.querySelector('#pp-go').addEventListener('click', async function() {
