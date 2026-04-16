@@ -258,9 +258,10 @@ function createWidget() {
   }
   .zone.vis { opacity: 1; pointer-events: auto; transform: scale(1); }
 
-  .zone-tl { right: calc(100% + 6px); bottom: calc(100% + 4px); resize: both; direction: rtl; overflow: auto; }
-  .zone-tl > * { direction: ltr; }
-  .zone-tr { left: calc(100% + 6px); bottom: calc(100% + 4px); resize: both; overflow: auto; }
+  .zone-tl { right: calc(100% + 6px); bottom: calc(100% + 4px); resize: both; direction: rtl; overflow: auto; transform: scaleY(-1); }
+  .zone-tl > * { direction: ltr; transform: scaleY(-1); }
+  .zone-tr { left: calc(100% + 6px); bottom: calc(100% + 4px); resize: both; overflow: auto; transform: scaleY(-1); }
+  .zone-tr > * { transform: scaleY(-1); }
   .zone-bl { right: calc(100% + 6px); top: calc(100% + 4px); resize: both; direction: rtl; overflow: auto; }
   .zone-bl > * { direction: ltr; }
   .zone-br { left: calc(100% + 6px); top: calc(100% + 4px); resize: both; overflow: auto; }
