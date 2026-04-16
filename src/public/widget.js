@@ -258,13 +258,22 @@ function createWidget() {
   }
   .zone.vis { opacity: 1; pointer-events: auto; transform: scale(1); }
 
-  .zone-tl { right: calc(100% + 6px); bottom: calc(100% + 4px); resize: both; direction: rtl; overflow: auto; transform: scaleY(-1); }
-  .zone-tl > * { direction: ltr; transform: scaleY(-1); }
-  .zone-tr { left: calc(100% + 6px); bottom: calc(100% + 4px); resize: both; overflow: auto; transform: scaleY(-1); }
-  .zone-tr > * { transform: scaleY(-1); }
+  .zone-tl { right: calc(100% + 6px); bottom: calc(100% + 4px); overflow-y: auto; position: relative; }
+  .zone-tr { left: calc(100% + 6px); bottom: calc(100% + 4px); overflow-y: auto; position: relative; }
   .zone-bl { right: calc(100% + 6px); top: calc(100% + 4px); resize: both; direction: rtl; overflow: auto; }
   .zone-bl > * { direction: ltr; }
   .zone-br { left: calc(100% + 6px); top: calc(100% + 4px); resize: both; overflow: auto; }
+
+  .drag-grip {
+    position: absolute; top: 0; left: 0; right: 0; height: 8px;
+    cursor: ns-resize; z-index: 2;
+  }
+  .drag-grip::after {
+    content: ''; position: absolute; top: 2px; left: 50%;
+    transform: translateX(-50%); width: 24px; height: 3px;
+    border-radius: 2px; background: rgba(60,50,40,0.15);
+  }
+  .drag-grip:hover::after { background: rgba(60,50,40,0.3); }
 
   .zone-label { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #9a9183; margin-bottom: 4px; }
 
@@ -352,11 +361,13 @@ function createWidget() {
 
     <!-- Zones -->
     <div class="zone zone-tl" id="z-tl">
+      <div class="drag-grip" id="grip-tl"></div>
       <div class="zone-label">input</div>
       <textarea id="input" placeholder="What's on your mind?"></textarea>
     </div>
 
     <div class="zone zone-tr" id="z-tr">
+      <div class="drag-grip" id="grip-tr"></div>
       <div class="zone-label" id="tr-label">marks</div>
       <div id="tr-content"></div>
     </div>
@@ -477,6 +488,36 @@ function createWidget() {
     window.addEventListener('touchmove', onMove, { passive: false });
     window.addEventListener('touchend', onUp);
   }, { passive: false });
+
+  // ── Drag grips for top zones (expand upward) ──
+  function setupGrip(gripEl, zoneEl) {
+    var startY = 0, startH = 0;
+    function onDown(e) {
+      e.preventDefault(); e.stopPropagation();
+      startY = e.clientY || e.touches[0].clientY;
+      startH = zoneEl.offsetHeight;
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+      window.addEventListener('touchmove', onMove, { passive: false });
+      window.addEventListener('touchend', onUp);
+    }
+    function onMove(e) {
+      var clientY = e.clientY != null ? e.clientY : e.touches[0].clientY;
+      var delta = startY - clientY; // dragging up = positive = taller
+      var newH = Math.max(60, startH + delta);
+      zoneEl.style.height = newH + 'px';
+    }
+    function onUp() {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onUp);
+    }
+    gripEl.addEventListener('mousedown', onDown);
+    gripEl.addEventListener('touchstart', onDown, { passive: false });
+  }
+  setupGrip($('#grip-tl'), zTL);
+  setupGrip($('#grip-tr'), zTR);
 
   // ── State transitions ──
   var allZones = [zTL, zTR, zBL, zBR];
