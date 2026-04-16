@@ -258,12 +258,12 @@ function createWidget() {
   }
   .zone.vis { opacity: 1; pointer-events: auto; transform: scale(1); }
 
-  .zone-tl { right: calc(100% + 34px); bottom: calc(100% + 34px); resize: both; direction: rtl; overflow: auto; }
+  .zone-tl { right: calc(100% + 6px); bottom: calc(100% + 4px); resize: both; direction: rtl; overflow: auto; }
   .zone-tl > * { direction: ltr; }
-  .zone-tr { left: calc(100% + 34px); bottom: calc(100% + 34px); resize: vertical; }
-  .zone-bl { right: calc(100% + 34px); top: calc(100% + 34px); resize: both; direction: rtl; overflow: auto; }
+  .zone-tr { left: calc(100% + 6px); bottom: calc(100% + 4px); resize: vertical; }
+  .zone-bl { right: calc(100% + 6px); top: calc(100% + 4px); resize: both; direction: rtl; overflow: auto; }
   .zone-bl > * { direction: ltr; }
-  .zone-br { left: calc(100% + 34px); top: calc(100% + 34px); resize: vertical; }
+  .zone-br { left: calc(100% + 6px); top: calc(100% + 4px); resize: vertical; }
 
   .zone-label { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #9a9183; margin-bottom: 4px; }
 
