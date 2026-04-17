@@ -76,7 +76,7 @@ async function getNetworkState(ownerId?: string): Promise<AgentState> {
 
   // Parallel queries for agent state
   const [passportResult, marksResult, inboxResult, grainResult] = await Promise.all([
-    client.from('sand_passports').select('id').eq('id', ownerId).maybeSingle(),
+    client.from('pscale_blocks').select('owner_id').eq('owner_id', ownerId).eq('name', 'passport').maybeSingle(),
     client.from('beach_marks').select('url_hash').eq('agent_id', ownerId),
     client.from('sand_inbox').select('id').eq('to_agent', ownerId).eq('read', false),
     client.from('pscale_blocks').select('name').eq('owner_id', ownerId).like('name', 'grain-%'),

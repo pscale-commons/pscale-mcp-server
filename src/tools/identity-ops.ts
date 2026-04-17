@@ -1,40 +1,37 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { bsp, type Block } from '../bsp.js';
-import { getClient, upsertBlock } from '../db.js';
+import { bsp, writeAt, type Block } from '../bsp.js';
+import { getBlock, upsertBlock, getPassportBlock, setTarget } from '../db.js';
+
+const TARGET_DESC = 'Storage target. Filesystem path for local storage, or "supabase" for the relay. Sticky — once set, persists for the session until changed.';
 
 // ── Exported handler functions (used by kernel + legacy registration) ──
 
 export async function handlePassportPublish(
-  { agent_id, description, offers, needs, lineage }: {
-    agent_id: string; description: string; offers?: string; needs?: string; lineage?: string;
+  { agent_id, description, offers, needs, lineage, target }: {
+    agent_id: string; description: string; offers?: string; needs?: string; lineage?: string; target?: string;
   },
 ) {
-  // The passport is a pscale block. Structure encodes meaning.
+  if (target) setTarget(target);
+  // The passport IS a pscale block. Structure encodes meaning.
   // _  = who you are
   // 1  = what you offer
   // 2  = what you need
   // 3  = lineage (star reference to origin)
-  const block: Block = { _: description };
+  // 9  = public_keys (reserved for infrastructure — written by key_publish)
+  //
+  // Single source of truth: pscale_blocks where name='passport'.
+
+  // Preserve existing block content (e.g. public_keys at 9, sub-addresses)
+  const existing = await getBlock(agent_id, 'passport');
+  const block: Block = existing ? { ...(existing.block as Block) } : {};
+
+  block._ = description;
   if (offers) block['1'] = offers;
   if (needs) block['2'] = needs;
   if (lineage) block['3'] = lineage;
 
-  // Save as a block (navigable by BSP)
   await upsertBlock(agent_id, 'passport', 'general', block);
-
-  // Also publish to sand_passports for cross-agent discovery
-  const client = getClient();
-  await client
-    .from('sand_passports')
-    .upsert(
-      {
-        id: agent_id,
-        passport: block,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'id' },
-    );
 
   return {
     content: [
@@ -53,14 +50,9 @@ export async function handlePassportPublish(
 export async function handlePassportRead(
   { agent_id }: { agent_id: string },
 ) {
-  const client = getClient();
-  const { data, error } = await client
-    .from('sand_passports')
-    .select('*')
-    .eq('id', agent_id)
-    .single();
+  const passport = await getPassportBlock(agent_id);
 
-  if (error && error.code === 'PGRST116') {
+  if (!passport) {
     return {
       content: [
         {
@@ -70,9 +62,7 @@ export async function handlePassportRead(
       ],
     };
   }
-  if (error) throw new Error(`DB error: ${error.message}`);
 
-  const passport = data.passport;
   const spindle = bsp(passport);
 
   return {
@@ -104,6 +94,7 @@ export function registerIdentityOps(server: McpServer) {
         .string()
         .optional()
         .describe("What you're looking for — becomes digit 2"),
+      target: z.string().optional().describe(TARGET_DESC),
     },
     handlePassportPublish,
   );

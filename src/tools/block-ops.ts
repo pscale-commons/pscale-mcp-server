@@ -1,17 +1,20 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { bsp, writeAt, fmtResult, fmtDir, type Block, type BspResult } from '../bsp.js';
-import { getBlock, upsertBlock, listBlocks } from '../db.js';
+import { getBlock, upsertBlock, listBlocks, setTarget } from '../db.js';
 import { selfEncrypt, decryptBlockNodes } from '../crypto.js';
 import { verifySedWrite } from './collective-ops.js';
+
+const TARGET_DESC = 'Storage target. Filesystem path for local storage, or "supabase" for the relay. Sticky — once set, persists for the session until changed.';
 
 // ── Exported handler functions (used by kernel + legacy registration) ──
 
 export async function handleCreateBlock(
-  { agent_id, name, initial_content, block_type }: {
-    agent_id: string; name: string; initial_content?: string; block_type?: string;
+  { agent_id, name, initial_content, block_type, target }: {
+    agent_id: string; name: string; initial_content?: string; block_type?: string; target?: string;
   },
 ) {
+  if (target) setTarget(target);
   const existing = await getBlock(agent_id, name);
   if (existing) {
     return {
@@ -38,10 +41,11 @@ export async function handleCreateBlock(
 }
 
 export async function handleWrite(
-  { agent_id, name, address, content, secret, passphrase }: {
-    agent_id: string; name: string; address: string; content: string; secret?: string; passphrase?: string;
+  { agent_id, name, address, content, secret, passphrase, target }: {
+    agent_id: string; name: string; address: string; content: string; secret?: string; passphrase?: string; target?: string;
   },
 ) {
+  if (target) setTarget(target);
   // Sedimentary block write protection
   if (name.startsWith('sed:') || agent_id.startsWith('sed:')) {
     const collective = name.startsWith('sed:') ? name.slice(4) : agent_id.slice(4);
@@ -91,10 +95,11 @@ export async function handleWrite(
 }
 
 export async function handleWalk(
-  { agent_id, name, address, mode, secret }: {
-    agent_id: string; name: string; address?: string; mode?: string; secret?: string;
+  { agent_id, name, address, mode, secret, target }: {
+    agent_id: string; name: string; address?: string; mode?: string; secret?: string; target?: string;
   },
 ) {
+  if (target) setTarget(target);
   const row = await getBlock(agent_id, name);
   if (!row) {
     return {
@@ -169,6 +174,7 @@ export function registerBlockOps(server: McpServer) {
         .describe(
           'What this block is about. Becomes the underscore — the root summary that all deeper content branches from.',
         ),
+      target: z.string().optional().describe(TARGET_DESC),
     },
     handleCreateBlock,
   );
@@ -193,6 +199,7 @@ export function registerBlockOps(server: McpServer) {
         .string()
         .optional()
         .describe('Required when writing to an occupied position in a sedimentary (sed:) block. The passphrase you used at registration. Sensitive — never repeat in conversation.'),
+      target: z.string().optional().describe(TARGET_DESC),
     },
     handleWrite,
   );
@@ -224,6 +231,7 @@ Start with 'dir' to see the whole block, then 'spindle' to drill into an address
         .string()
         .optional()
         .describe('Your passphrase or block hash. When provided, decrypts encrypted (gray) content in the block.'),
+      target: z.string().optional().describe(TARGET_DESC),
     },
     handleWalk,
   );

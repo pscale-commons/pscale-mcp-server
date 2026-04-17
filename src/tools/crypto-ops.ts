@@ -1,7 +1,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { getClient } from '../db.js';
+import { getBlock, upsertBlock, getPassportBlock, getPublicKeys } from '../db.js';
 import { deriveKeypair, formatPublicKeys, keysMatch } from '../crypto.js';
+import { writeAt, type Block } from '../bsp.js';
 
 // ── Handler ──
 
@@ -12,15 +13,9 @@ export async function handleKeyPublish(
   const keys = await deriveKeypair(secret, agent_id);
   const pubKeys = formatPublicKeys(keys);
 
-  // 2. Check passport exists
-  const client = getClient();
-  const { data: passport, error: fetchErr } = await client
-    .from('sand_passports')
-    .select('id, public_keys')
-    .eq('id', agent_id)
-    .single();
-
-  if (fetchErr || !passport) {
+  // 2. Check passport exists (in pscale_blocks)
+  const row = await getBlock(agent_id, 'passport');
+  if (!row) {
     return {
       content: [{
         type: 'text' as const,
@@ -29,10 +24,10 @@ export async function handleKeyPublish(
     };
   }
 
-  // 3. If keys already published, verify match
-  if (passport.public_keys) {
-    const existing = passport.public_keys as { x25519: string; ed25519: string };
-    if (keysMatch(existing, pubKeys)) {
+  // 3. If keys already published (at address 9), verify match
+  const existingKeys = await getPublicKeys(agent_id);
+  if (existingKeys) {
+    if (keysMatch(existingKeys, pubKeys)) {
       return {
         content: [{
           type: 'text' as const,
@@ -57,13 +52,10 @@ export async function handleKeyPublish(
     }
   }
 
-  // 4. Publish public keys
-  const { error: updateErr } = await client
-    .from('sand_passports')
-    .update({ public_keys: pubKeys })
-    .eq('id', agent_id);
-
-  if (updateErr) throw new Error(`DB error: ${updateErr.message}`);
+  // 4. Write public keys to passport block at address 9
+  const block = row.block as Block;
+  writeAt(block, '9', pubKeys as any);
+  await upsertBlock(agent_id, 'passport', row.block_type, block);
 
   return {
     content: [{

@@ -106,13 +106,13 @@ api/
 ## Storage
 
 Supabase project `piqxyfmzzywxzqkzmpmm` (xstream). Tables:
-- `pscale_blocks` — agent block storage (owner_id + name = unique, position_hashes JSONB for sed: blocks)
-- `sand_passports` — agent identity publication (id = agent_id, public_keys JSONB for gray)
+- `pscale_blocks` — agent block storage (owner_id + name = unique, position_hashes JSONB for sed: blocks). Passports are blocks with `name='passport'` — `_` = description, `1` = offers, `2` = needs, `3` = lineage, `9` = public_keys (gray encryption).
 - `sand_inbox` — grain probe exchange (to_agent, from_agent, message JSONB)
 - `beach_marks` — stigmergy marks at URLs (pre-existing from xstream-play)
 - `pool_state` — liquid pool metadata (pool_id, url_hash, synthesis_hint, ttl_days)
 - `pool_contributions` — pool messages (pool_id, agent_id, message)
 - `pool_read_markers` — per-agent read position in pools
+- `sand_passports` — **DEPRECATED, no longer used by code.** Was a separate discovery table for passports; replaced by querying `pscale_blocks` where `name='passport'`. Retained in DB for now; can be dropped.
 
 Sedimentary blocks use `owner_id = "sed:{collective}"` and `position_hashes` to store SHA-256 hashes of registration passphrases per position.
 
@@ -499,3 +499,27 @@ Responsibilities stack. 1.9 is human (developer sets up endpoint). 2.9 is agenti
 ## The spec
 
 The original spec is at `/Users/davidpinto/Downloads/pscale-mcp-server-spec.md`. Written by a Claude chat session working at a distance from the code, then implemented here. The spec described 13 tools; we built 20. Grain-directory architecture at `~/Downloads/grain/grain-directory-spec.md`. Sedimentary registration build spec at `~/Downloads/sedimentary-registration-spec.md`.
+
+## The 16 April 2026 session — sand_passports eliminated
+
+**Problem**: Passports were stored in TWO places — `pscale_blocks` (as a proper block with `name='passport'`) AND `sand_passports` (a flat discovery table). The dual-write meant `pscale_passport_publish` wrote to both, but `pscale_write` to deepen the passport at sub-addresses only updated `pscale_blocks`. The `sand_passports` copy went stale immediately. Public keys for gray encryption were stored on `sand_passports` only, creating a third inconsistency.
+
+**Why sand_passports existed**: It was built before the design corrected course. The original spec described passports as flat identity records in a dedicated table. When passports became proper pscale blocks (`_ = description, 1 = offers, 2 = needs`), the table survived as a zombie — a stale snapshot that every tool dutifully wrote to or read from.
+
+**What changed**:
+- `pscale_blocks` where `name='passport'` is now the single source of truth
+- Public keys stored at address `9` in the passport block (reserved for infrastructure)
+- `passport_publish` preserves existing block content (keys, sub-addresses) on republish
+- `passport_read` reads from `pscale_blocks`, not `sand_passports`
+- `key_publish` writes keys to passport block address `9`, not `sand_passports.public_keys`
+- Gray encryption path in `inbox_send` reads keys from passport blocks via `getPublicKeys()` helper
+- `invite-ops` passport existence check queries `pscale_blocks`
+- Beach visualization (`pages.ts`) reads from `pscale_blocks` where `name='passport'`
+- `evolution.json` table list updated
+- `db.ts` gains `getPassportBlock()` and `getPublicKeys()` helpers
+
+**Data migration**: happyseaurchin's public_keys copied from `sand_passports` to passport block address `9`. agent-alpha's old-format passport created as a proper block. All 7 agents verified to have passport blocks.
+
+**`sand_passports` table**: Still in Supabase, no longer referenced by any code. Can be dropped when convenient. Passport block structure: `_ = description, 1 = offers, 2 = needs, 3 = lineage, 9 = { x25519, ed25519 }`.
+
+**The lesson**: When the data model evolves, kill the old table. Don't dual-write. Every dual-write is a drift bug waiting to confuse the next agent.

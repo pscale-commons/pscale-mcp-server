@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
-import { getClient } from '../db.js';
+import { getClient, getPublicKeys } from '../db.js';
 import {
   deriveKeypair,
   formatPublicKeys,
@@ -242,28 +242,18 @@ export async function handleInboxSend(
     const senderKeys = await deriveKeypair(secret, from_agent);
     const senderPub = formatPublicKeys(senderKeys);
 
-    const { data: senderPassport } = await client
-      .from('sand_passports')
-      .select('public_keys')
-      .eq('id', from_agent)
-      .single();
-
-    if (!senderPassport?.public_keys || !keysMatch(senderPassport.public_keys as any, senderPub)) {
+    const senderStoredKeys = await getPublicKeys(from_agent);
+    if (!senderStoredKeys || !keysMatch(senderStoredKeys, senderPub)) {
       return { content: [{ type: 'text' as const, text: 'Secret does not match published keys. Run pscale_key_publish first.' }] };
     }
 
-    // Fetch recipient's public keys
-    const { data: recipientPassport } = await client
-      .from('sand_passports')
-      .select('public_keys')
-      .eq('id', to_agent)
-      .single();
-
-    if (!recipientPassport?.public_keys) {
+    // Fetch recipient's public keys from their passport block
+    const recipientStoredKeys = await getPublicKeys(to_agent);
+    if (!recipientStoredKeys) {
       return { content: [{ type: 'text' as const, text: 'Recipient has not published encryption keys. Cannot send gray.' }] };
     }
 
-    const recipientPub = parsePublicKeys(recipientPassport.public_keys as any);
+    const recipientPub = parsePublicKeys(recipientStoredKeys);
 
     // Build plaintext from the message fields
     let parsedContent: any = content;

@@ -1,7 +1,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { bsp, writeAt, floorDepth, collectUnderscore, fmtResult, fmtDisc, type Block } from '../bsp.js';
-import { getBlock, upsertBlock } from '../db.js';
+import { getBlock, upsertBlock, setTarget } from '../db.js';
+
+const TARGET_DESC = 'Storage target. Filesystem path for local storage, or "supabase" for the relay. Sticky — once set, persists for the session until changed.';
 
 /**
  * Find the next empty slot at a given level in the history block.
@@ -91,10 +93,11 @@ function compactIfFull(block: Block, path: string[]): void {
 // ── Exported handler functions (used by kernel + legacy registration) ──
 
 export async function handleRemember(
-  { agent_id, content, category }: {
-    agent_id: string; content: string; category?: string;
+  { agent_id, content, category, target }: {
+    agent_id: string; content: string; category?: string; target?: string;
   },
 ) {
+  if (target) setTarget(target);
   const { block, isNew } = await getOrCreateHistory(agent_id);
 
   const timestamp = new Date().toISOString();
@@ -139,10 +142,11 @@ export async function handleRemember(
 }
 
 export async function handleRecall(
-  { agent_id, level, position, search }: {
-    agent_id: string; level?: number; position?: number; search?: string;
+  { agent_id, level, position, search, target }: {
+    agent_id: string; level?: number; position?: number; search?: string; target?: string;
   },
 ) {
+  if (target) setTarget(target);
   const row = await getBlock(agent_id, 'history');
   if (!row) {
     return {
@@ -216,10 +220,11 @@ export async function handleRecall(
 }
 
 export async function handleConcern(
-  { agent_id, action, purpose, perception, gap }: {
-    agent_id: string; action: string; purpose?: string; perception?: string; gap?: string;
+  { agent_id, action, purpose, perception, gap, target }: {
+    agent_id: string; action: string; purpose?: string; perception?: string; gap?: string; target?: string;
   },
 ) {
+  if (target) setTarget(target);
   if (action === 'read') {
     const row = await getBlock(agent_id, 'concern');
     if (!row) {
@@ -292,6 +297,7 @@ export function registerMemoryOps(server: McpServer) {
         .describe(
           "Optional. A short tag like 'decision', 'event', 'learning', 'interaction'. Helps with later recall.",
         ),
+      target: z.string().optional().describe(TARGET_DESC),
     },
     handleRemember,
   );
@@ -321,6 +327,7 @@ export function registerMemoryOps(server: McpServer) {
         .describe(
           'Optional. A keyword or phrase to search for across the history block.',
         ),
+      target: z.string().optional().describe(TARGET_DESC),
     },
     handleRecall,
   );
@@ -345,6 +352,7 @@ export function registerMemoryOps(server: McpServer) {
         .describe(
           "For 'set': the difference between purpose and perception",
         ),
+      target: z.string().optional().describe(TARGET_DESC),
     },
     handleConcern,
   );
