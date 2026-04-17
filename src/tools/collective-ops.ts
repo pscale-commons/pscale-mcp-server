@@ -165,6 +165,50 @@ export async function verifySedWrite(
   return { allowed: true };
 }
 
+/**
+ * Verify ownership of a sedimentary address for messaging purposes.
+ *
+ * Semantics differ from verifySedWrite:
+ *   - Empty position → REJECTED (cannot claim an unregistered address).
+ *   - Occupied position → passphrase must match the stored hash.
+ *
+ * Used by pscale_inbox_send when from_agent is sed:... and by
+ * pscale_inbox_check when agent_id is sed:...
+ */
+export async function verifySedOwnership(
+  sedAddress: string,
+  passphrase?: string,
+): Promise<{ allowed: boolean; error?: string; collective?: string; position?: string }> {
+  const parts = sedAddress.split(':');
+  if (parts.length !== 3 || parts[0] !== 'sed') {
+    return { allowed: false, error: `Invalid sedimentary address: ${sedAddress}. Format: sed:collective:position` };
+  }
+  const collective = parts[1];
+  const position = parts[2];
+
+  if (!passphrase) {
+    return { allowed: false, error: `Sedimentary address ${sedAddress} requires 'secret' (registration passphrase) to prove ownership.` };
+  }
+
+  const owner = sedOwner(collective);
+  const row = await getBlock(owner, collective);
+  if (!row) {
+    return { allowed: false, error: `Collective "${collective}" not found.` };
+  }
+
+  const storedHash = (row.position_hashes || {})[position];
+  if (!storedHash) {
+    return { allowed: false, error: `Position ${position} in ${collective} is not registered. Register first with pscale_register.` };
+  }
+
+  const computedHash = await hashPassphrase(passphrase, collective, position);
+  if (computedHash !== storedHash) {
+    return { allowed: false, error: `Incorrect passphrase for ${sedAddress}.` };
+  }
+
+  return { allowed: true, collective, position };
+}
+
 // ── Resolve sedimentary address to agent identity ──
 
 export async function resolveSedAddress(

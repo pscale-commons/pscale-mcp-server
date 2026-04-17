@@ -11,6 +11,18 @@ import {
   decryptFromSender,
   type EncryptedPayload,
 } from '../crypto.js';
+import { verifySedOwnership } from './collective-ops.js';
+
+/** True if the address is a sedimentary position (sed:collective:position). */
+function isSedAddress(addr: string): boolean {
+  return addr.startsWith('sed:');
+}
+
+/** Parse an ecosquared rider string. Returns null if blank, the parsed object on success, or throws if malformed JSON. */
+function parseEcosquared(raw?: string): unknown | null {
+  if (!raw) return null;
+  return JSON.parse(raw);
+}
 
 /** Hash a URL to match beach_marks schema (same as xstream-play) */
 function hashUrl(url: string): string {
@@ -228,18 +240,63 @@ export async function handleBeachRead(
 }
 
 export async function handleInboxSend(
-  { from_agent, to_agent, message_type, spindle, content, responding_to, secret, envelope }: {
+  { from_agent, to_agent, message_type, spindle, content, responding_to, secret, envelope, ecosquared }: {
     from_agent: string; to_agent: string; message_type: string;
     spindle?: string; content?: string; responding_to?: string;
-    secret?: string; envelope?: string;
+    secret?: string; envelope?: string; ecosquared?: string;
   },
 ) {
   const client = getClient();
 
+  // ── Sedimentary ownership check ──
+  // If the sender claims a sed:collective:position address, they must prove it
+  // by supplying the registration passphrase in `secret`. Prevents eval forgery.
+  if (isSedAddress(from_agent)) {
+    const ownership = await verifySedOwnership(from_agent, secret);
+    if (!ownership.allowed) {
+      return { content: [{ type: 'text' as const, text: ownership.error || 'Sedimentary ownership check failed.' }] };
+    }
+  }
+
+  // ── Parse ecosquared rider (stored as-is, no interpretation) ──
+  let rider: unknown | null = null;
+  if (ecosquared) {
+    try { rider = parseEcosquared(ecosquared); }
+    catch (e: any) {
+      return { content: [{ type: 'text' as const, text: `Invalid ecosquared rider — not valid JSON: ${e?.message || e}` }] };
+    }
+  }
+
   // ── Encrypted (gray) path ──
-  if (secret) {
+  // Activated when: sender supplied secret, sender has published keys that
+  // match the derived keypair, AND recipient has published keys. For sed:
+  // senders, ownership has already been verified above; encryption is
+  // additional and only kicks in if keys are published on both sides.
+  const wantsGray = !!secret;
+  let goGray = false;
+  if (wantsGray) {
+    const senderStored = await getPublicKeys(from_agent);
+    const recipientStored = await getPublicKeys(to_agent);
+    if (senderStored && recipientStored) {
+      const derived = formatPublicKeys(await deriveKeypair(secret!, from_agent));
+      if (keysMatch(senderStored, derived)) {
+        goGray = true;
+      } else if (!isSedAddress(from_agent)) {
+        // Non-sed senders supplying a secret that doesn't match published keys:
+        // preserve the original strict failure — the secret was clearly meant
+        // as a key-derivation seed, not an ownership passphrase.
+        return { content: [{ type: 'text' as const, text: 'Secret does not match published keys. Run pscale_key_publish first.' }] };
+      }
+    } else if (!isSedAddress(from_agent)) {
+      // Non-sed sender with secret but keys not on file → same strict behaviour.
+      return { content: [{ type: 'text' as const, text: 'Secret does not match published keys. Run pscale_key_publish first.' }] };
+    }
+  }
+
+  if (goGray) {
+    // goGray implies secret was supplied AND keys matched in the precheck.
     // Derive sender's keys and verify they match published keys
-    const senderKeys = await deriveKeypair(secret, from_agent);
+    const senderKeys = await deriveKeypair(secret!, from_agent);
     const senderPub = formatPublicKeys(senderKeys);
 
     const senderStoredKeys = await getPublicKeys(from_agent);
@@ -269,11 +326,14 @@ export async function handleInboxSend(
     // Encrypt and sign
     const encrypted = encryptForRecipient(plaintext, senderKeys, recipientPub.x25519);
 
-    // Store as gray message
+    // Store as gray message. The ecosquared rider rides in cleartext alongside
+    // the encrypted payload so intermediaries can route by it without reading
+    // the message body. Conventions interpret; the server stores.
     const message = {
       type: 'gray',
       encrypted,
       ...(envelope ? { envelope } : {}),
+      ...(rider !== null ? { ecosquared: rider } : {}),
       sent_at: new Date().toISOString(),
     };
 
@@ -309,6 +369,7 @@ export async function handleInboxSend(
     ...(spindle ? { spindle } : {}),
     ...(parsedContent ? { content: parsedContent } : {}),
     ...(responding_to ? { responding_to } : {}),
+    ...(rider !== null ? { ecosquared: rider } : {}),
     sent_at: new Date().toISOString(),
   };
 
@@ -333,6 +394,16 @@ export async function handleInboxCheck(
 ) {
   const client = getClient();
   const effectiveUnreadOnly = unread_only ?? true;
+
+  // Sedimentary ownership: you can only read the inbox of an address you hold
+  // the registration passphrase for. Prevents anyone from draining another
+  // position's inbox.
+  if (isSedAddress(agent_id)) {
+    const ownership = await verifySedOwnership(agent_id, secret);
+    if (!ownership.allowed) {
+      return { content: [{ type: 'text' as const, text: ownership.error || 'Sedimentary ownership check failed.' }] };
+    }
+  }
 
   let query = client
     .from('sand_inbox')
@@ -450,13 +521,13 @@ export function registerDiscoveryOps(server: McpServer) {
 
   server.tool(
     'pscale_inbox_send',
-    `Send a message to another agent's inbox — typically a grain probe initiating engagement. Include a spindle from your own block representing why you want to connect. The receiving agent compares your spindle against their own blocks to assess resonance. Add 'secret' to encrypt the message (gray) — only the recipient can read it.`,
+    `Send a message to another agent's inbox. Grain probes initiate bilateral engagement; Level 2 probes fan out through sedimentary routing. When from_agent is a sedimentary address (sed:collective:position), 'secret' is required and must be the registration passphrase — this proves you hold that position. When both sender and recipient have published encryption keys via pscale_key_publish, the message is sent encrypted (gray). Attach an ecosquared rider to carry routing/evaluation metadata — stored as-is, interpreted by convention.`,
     {
-      from_agent: z.string().describe('Your agent identifier'),
+      from_agent: z.string().describe('Your agent identifier. For sedimentary addresses use sed:collective:position (e.g. "sed:commons:3") — requires "secret".'),
       to_agent: z.string().describe('Target agent identifier. For sedimentary positions, use the format sed:collective:position (e.g. "sed:commons:3").'),
       message_type: z
-        .enum(['grain_probe', 'grain_response', 'general'])
-        .describe('Message type'),
+        .enum(['grain_probe', 'grain_response', 'probe', 'signal_return', 'general'])
+        .describe('Message type. grain_probe/grain_response: Level 1 bilateral. probe/signal_return: Level 2 discovery through the sedimentary network. general: anything else.'),
       spindle: z
         .string()
         .optional()
@@ -476,20 +547,24 @@ export function registerDiscoveryOps(server: McpServer) {
       secret: z
         .string()
         .optional()
-        .describe('Your passphrase or block hash. When provided, encrypts the message (gray). Both sender and recipient must have published keys via pscale_key_publish.'),
+        .describe('Passphrase. Required when from_agent is a sed: address (proves position ownership). If both sender and recipient have published keys via pscale_key_publish, the message is also encrypted (gray).'),
       envelope: z
         .string()
         .optional()
         .describe('Public metadata on encrypted messages (visible to anyone). Topic hints, urgency. Keep minimal.'),
+      ecosquared: z
+        .string()
+        .optional()
+        .describe('Optional Level 2 rider — JSON object carrying routing and evaluation metadata (v, from, ts, sq, eval, credits, neighbors). Stored as-is, no validation beyond JSON parseability. See sed:commons conventions for the schema and interpretation.'),
     },
     handleInboxSend,
   );
 
   server.tool(
     'pscale_inbox_check',
-    `Check your inbox for messages from other agents. Returns unread messages, typically grain probes from agents that discovered you via the beach. Add 'secret' to decrypt gray (encrypted) messages.`,
+    `Check your inbox for messages from other agents. Returns unread messages, typically grain probes from agents that discovered you via the beach. Add 'secret' to decrypt gray (encrypted) messages. When agent_id is a sedimentary address (sed:collective:position), 'secret' is required and must be the registration passphrase — only the position holder can read its inbox.`,
     {
-      agent_id: z.string().describe('Your agent identifier'),
+      agent_id: z.string().describe('Your agent identifier. For sedimentary addresses use sed:collective:position — requires "secret" (registration passphrase).'),
       unread_only: z
         .boolean()
         .default(true)
@@ -497,7 +572,7 @@ export function registerDiscoveryOps(server: McpServer) {
       secret: z
         .string()
         .optional()
-        .describe('Your passphrase or block hash. When provided, decrypts gray messages in your inbox.'),
+        .describe('Passphrase. Required when agent_id is a sed: address (proves position ownership). Also used to decrypt gray messages if you have published encryption keys.'),
     },
     handleInboxCheck,
   );
