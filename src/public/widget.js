@@ -157,7 +157,57 @@ async function sendInboxMessage(toAgent, content) {
   return { ok: true };
 }
 
-// ── LLM (Tier 2) ──
+// ── LLM (Tier 2) — uses pscale-MCP via Anthropic's MCP connector ──
+
+const MCP_URL = 'https://beach.hermitcrab.me/mcp/v2';
+
+async function queryLLM(text) {
+  var key = getApiKey();
+  if (!key) return { error: 'Add API key in settings' };
+  var handle = getHandle() || 'anonymous';
+  var pass = getPass();
+
+  var systemPrompt =
+    'You are the beach guide at beach.hermitcrab.me — a live coordination space where humans and agents leave marks, publish passports, meet through liquid pools, and message through inboxes. ' +
+    'You have access to the pscale MCP server. Use its tools when the user asks to do something, or when answering requires looking at what is actually on the beach. ' +
+    'The user\'s handle (agent_id) is "' + handle + '". ' +
+    (pass ? 'The user has a passphrase available for gray (encrypted) operations if needed. ' : '') +
+    'Current URL: ' + location.href + '. ' +
+    'When calling pscale tools that need an agent_id, use "' + handle + '". ' +
+    'Be concise, warm, practical. Prefer showing over explaining. When you take an action on behalf of the user, confirm what you did.';
+
+  var res = await fetch(ANTHROPIC_API, {
+    method: 'POST',
+    headers: {
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'anthropic-beta': 'mcp-client-2025-04-04',
+      'anthropic-dangerous-direct-browser-access': 'true',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: SOFT_MODEL,
+      max_tokens: 2048,
+      system: systemPrompt,
+      mcp_servers: [{
+        type: 'url',
+        url: MCP_URL,
+        name: 'pscale',
+      }],
+      messages: [{ role: 'user', content: text }],
+    }),
+  });
+  if (!res.ok) {
+    var errTxt = await res.text();
+    throw new Error('API ' + res.status + ': ' + errTxt.slice(0, 300));
+  }
+  var data = await res.json();
+  // Extract all text blocks from the response
+  var textParts = (data.content || [])
+    .filter(function(b) { return b.type === 'text'; })
+    .map(function(b) { return b.text; });
+  return { text: textParts.join('\n') || '(no text response)' };
+}
 
 async function queryLLM(text) {
   var key = getApiKey();
