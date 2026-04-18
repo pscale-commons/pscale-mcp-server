@@ -21,6 +21,41 @@ export async function hashPassphrase(passphrase: string, collective: string, pos
     .join('');
 }
 
+/**
+ * Find the next valid unoccupied position in a sedimentary collective.
+ *
+ * Valid positions are positive integers whose decimal representation
+ * contains only digits 1-9 (no 0). Digit 0 is reserved for the underscore
+ * at every level of pscale, so positions like 10, 20, 100, 110 would
+ * collide with semantic slots in the tree.
+ *
+ * Floor = 2: users live at depth 2 minimum (addresses 11+). Positions 1-9
+ * are pure structure — group names for the 9 top-level branches, never
+ * user slots. This keeps "no nesting of people" clean while allowing the
+ * collective to grow naturally into deeper addresses (111+, 1111+, etc.)
+ * as it fills.
+ *
+ * Sequence: 11, 12, ..., 19, 21, 22, ..., 99, 111, 112, ..., 999, 1111, ...
+ *
+ * Landing order: the Nth valid registrant lands at the Nth integer in this
+ * sequence. Proof-of-presence-in-time, carried in the address itself. The
+ * server is the only party that assigns positions, so the ordering is
+ * incorruptible.
+ *
+ * @param positionHashes - map of occupied positions (e.g. { "0": ..., "11": ..., "23": ... }).
+ *                        Position "0" is the root creator slot; positions 1-9
+ *                        are reserved structural group names, never user slots.
+ */
+export function nextValidPosition(positionHashes: Record<string, string>): number {
+  let n = 11; // start at floor = 2; 1-9 are structural group names, not user slots
+  while (n < 1_000_000) {
+    const s = String(n);
+    if (!s.includes('0') && !positionHashes[s]) return n;
+    n++;
+  }
+  throw new Error('No valid position found below 1,000,000 — collective is implausibly full.');
+}
+
 // ── Handlers ──
 
 export async function handleCreateCollective(
@@ -58,8 +93,8 @@ export async function handleCreateCollective(
 }
 
 export async function handleRegister(
-  { collective, position, declaration, shell_ref, passphrase }: {
-    collective: string; position: number; declaration: string;
+  { collective, declaration, shell_ref, passphrase }: {
+    collective: string; declaration: string;
     shell_ref?: string; passphrase: string;
   },
 ) {
@@ -75,27 +110,14 @@ export async function handleRegister(
     };
   }
 
-  if (position < 1 || position > 9) {
-    return {
-      content: [{
-        type: 'text' as const,
-        text: `Position must be 1-9. Walk the collective first to see which positions are available: pscale_walk(agent_id: "${owner}", name: "${collective}").`,
-      }],
-    };
-  }
-
   const block = row.block as Block;
-  const posKey = String(position);
+  const positionHashes = row.position_hashes || {};
 
-  // Check if position is already occupied
-  if (block[posKey] !== undefined) {
-    return {
-      content: [{
-        type: 'text' as const,
-        text: `Position ${position} is already occupied. Walk the collective to find an available position: pscale_walk(agent_id: "${owner}", name: "${collective}").`,
-      }],
-    };
-  }
+  // Auto-assign: server picks the lowest unoccupied valid position.
+  // Valid = positive integer using only digits 1-9 (no 0). Position is
+  // proof-of-presence-in-time; landing order is the meaning.
+  const position = nextValidPosition(positionHashes);
+  const posKey = String(position);
 
   // Hash the passphrase
   const passHash = await hashPassphrase(passphrase, collective, posKey);
@@ -112,7 +134,7 @@ export async function handleRegister(
   writeAt(block, posKey, positionContent);
 
   // Update hashes
-  const hashes = { ...(row.position_hashes || {}), [posKey]: passHash };
+  const hashes = { ...positionHashes, [posKey]: passHash };
   await upsertBlock(owner, collective, 'sedimentary', block);
   await updatePositionHashes(owner, collective, hashes);
 
@@ -121,7 +143,7 @@ export async function handleRegister(
   return {
     content: [{
       type: 'text' as const,
-      text: `Registered at position ${position} in ${collective}.\n\n${fmtResult(result)}\n\nYour position is write-locked. Keep your passphrase safe — you need it to update your declaration. Others can walk to your position but cannot modify it.`,
+      text: `Registered at position ${position} in ${collective}.\n\nYour address: sed:${collective}:${position}\n\n${fmtResult(result)}\n\nYour position is write-locked. Keep your passphrase safe — you need it to update your declaration. Position assigned by the server in landing order — it is your proof-of-presence-in-time.`,
     }],
   };
 }
@@ -263,72 +285,95 @@ export async function resolveSedAddress(
  * Compute routing targets from a sedimentary address.
  * Pure digit manipulation — no LLM, no semantics.
  *
- * Algorithm (David's "lift" model):
- *   1. Siblings: same group prefix, all other positions (1-9 except own last digit)
- *   2. Lift: each sibling's last digit D → replace last digit of group prefix with D
- *      → that's the target group. All occupied positions in that group are targets.
- *   3. Cascade targets: for agents that received a lift, they enter their sub-tree
- *      (address + 1-9). Returned so the next hop knows where to go.
+ * An address is a path through a digit tree. Four kinds of tree-neighbour
+ * are routing-relevant; they do NOT imply any ownership relationship —
+ * every user is independent and passphrase-locked at their own slot.
+ *
+ *   1. Siblings: same parent, different last digit (1-9 except own).
+ *   2. Parent: the address with the last digit stripped (null at depth 1).
+ *   3. Children: the 9 potential deeper-neighbours (own address + digit 1-9).
+ *   4. Lifts: sideways shortcuts to parallel groups at the same depth —
+ *      for each digit D (skipping own-group digit), target group = parent's
+ *      prefix + D, targets = that group's 9 child positions.
+ *
+ * Lifts intentionally do NOT require a specific "via" sibling to be
+ * registered. The "via" is descriptive metadata naming the digit
+ * transformation; routing itself goes directly to targets via inbox_send.
+ * Filtering on via-occupancy would bias reach toward low-digit groups
+ * (where earlier registrants cluster), producing low-digit heavy discovery
+ * in sparse networks. Filter only on target occupancy.
  *
  * Example: address "34"
- *   - Group prefix: "3", position: 4
- *   - Siblings: 31,32,33,35,36,37,38,39
- *   - Lift: 31(digit 1)→group "1"→11-19, 32(digit 2)→group "2"→21-29, etc.
+ *   - Parent: "3" ; Children: 341-349
+ *   - Siblings: 31, 32, 33, 35, 36, 37, 38, 39
+ *   - Lifts: via d=1→group "1"→11-19, via d=2→group "2"→21-29, ..., via d=9→91-99
+ *     (d=3 skipped — own group)
  *
  * Example: address "16234"
- *   - Group prefix: "1623", position: 4
- *   - Siblings: 16231-16239 (except 16234)
- *   - Lift: 16231→group "1621"→16211-16219, 16232→group "1622"→16221-16229, etc.
+ *   - Parent: "1623" ; Children: 162341-162349
+ *   - Siblings: 16231, 16232, 16233, 16235, 16236, 16237, 16238, 16239
+ *   - Lifts via each d != 3 (own group digit of "1623"): target group = "162" + d,
+ *     targets = that group's 9 children
  */
 export function computeRouteTargets(address: string): {
+  parent: string | null;
+  children: string[];
   siblings: string[];
   lifts: Array<{ via: string; target_group_prefix: string; targets: string[] }>;
 } {
   const digits = address.replace(/\./g, '');
 
   if (digits.length === 0) {
-    return { siblings: [], lifts: [] };
+    return { parent: null, children: [], siblings: [], lifts: [] };
   }
 
-  // Single-digit address (root group, positions 1-9): siblings only, no lift
-  if (digits.length === 1) {
-    const siblings: string[] = [];
-    for (let d = 1; d <= 9; d++) {
-      if (String(d) !== digits) siblings.push(String(d));
-    }
-    return { siblings, lifts: [] };
+  // Parent: depth-N address becomes depth-(N-1) by stripping last digit.
+  // Depth-1 addresses have no parent (root collective).
+  const parent = digits.length >= 2 ? digits.slice(0, -1) : null;
+
+  // Children: 9 potential deeper-neighbours, one per digit 1-9.
+  const children: string[] = [];
+  for (let d = 1; d <= 9; d++) {
+    children.push(digits + String(d));
   }
 
-  const groupPrefix = digits.slice(0, -1); // all but last digit
-  const ownDigit = digits.slice(-1);       // last digit
+  const ownDigit = digits.slice(-1);
 
-  // Siblings: same group prefix, different last digit
+  // Siblings: same parent, different last digit (1-9 except own)
   const siblings: string[] = [];
+  const groupPrefix = digits.slice(0, -1); // empty string if depth 1
   for (let d = 1; d <= 9; d++) {
     if (String(d) !== ownDigit) {
       siblings.push(groupPrefix + String(d));
     }
   }
 
-  // Lift targets: each sibling's digit replaces the last digit of the group prefix
+  // Lifts
   const lifts: Array<{ via: string; target_group_prefix: string; targets: string[] }> = [];
 
-  if (groupPrefix.length >= 1) {
-    const parentPrefix = groupPrefix.slice(0, -1); // group prefix's prefix
-    const groupDigit = groupPrefix.slice(-1);       // last digit of group prefix
+  if (digits.length === 1) {
+    // Depth 1: lift downward into each sibling's subtree. Target group = the
+    // sibling itself (single digit), targets = that digit's 9 children.
+    for (let d = 1; d <= 9; d++) {
+      if (String(d) === ownDigit) continue;
+      const targetGroupPrefix = String(d);
+      const targets: string[] = [];
+      for (let p = 1; p <= 9; p++) targets.push(targetGroupPrefix + String(p));
+      lifts.push({ via: String(d), target_group_prefix: targetGroupPrefix, targets });
+    }
+  } else {
+    // Depth 2+: sideways to parallel groups at the same depth.
+    const parentPrefix = groupPrefix.slice(0, -1); // may be empty
+    const groupDigit = groupPrefix.slice(-1);
 
     for (let d = 1; d <= 9; d++) {
+      if (String(d) === groupDigit) continue; // skip own group
+
       const siblingAddr = groupPrefix + String(d);
       const targetGroupPrefix = parentPrefix + String(d);
 
-      // Skip if this maps back to our own group
-      if (String(d) === groupDigit) continue;
-
-      // Compute all positions in target group (1-9)
       const targets: string[] = [];
-      for (let p = 1; p <= 9; p++) {
-        targets.push(targetGroupPrefix + String(p));
-      }
+      for (let p = 1; p <= 9; p++) targets.push(targetGroupPrefix + String(p));
 
       lifts.push({
         via: siblingAddr,
@@ -338,7 +383,7 @@ export function computeRouteTargets(address: string): {
     }
   }
 
-  return { siblings, lifts };
+  return { parent, children, siblings, lifts };
 }
 
 /**
@@ -372,23 +417,36 @@ export async function handleRoute(
   }
 
   const block = row.block as Block;
-  const { siblings, lifts } = computeRouteTargets(address);
+  const { parent, children, siblings, lifts } = computeRouteTargets(address);
 
-  // Filter to occupied positions
+  // Filter to occupied positions. Note: lifts do NOT require the "via" sibling
+  // to be occupied — "via" is descriptive metadata, not a physical hop. We
+  // filter only on target occupancy, which keeps reach uniform across groups.
+  const occupiedParent = parent ? filterOccupied(block, [parent])[0] : undefined;
+  const occupiedChildren = filterOccupied(block, children);
   const occupiedSiblings = filterOccupied(block, siblings);
-
   const occupiedLifts = lifts
-    .map(lift => ({
-      ...lift,
-      via: filterOccupied(block, [lift.via])[0],
-      targets: filterOccupied(block, lift.targets),
-    }))
-    .filter(lift => lift.via && lift.targets.length > 0);
+    .map(lift => ({ ...lift, targets: filterOccupied(block, lift.targets) }))
+    .filter(lift => lift.targets.length > 0);
 
   // Format output
   const lines: string[] = [];
   lines.push(`Routing targets for ${address} in ${collective}:`);
   lines.push('');
+
+  if (occupiedParent) {
+    lines.push(`Parent: sed:${collective}:${occupiedParent}`);
+  } else if (parent === null) {
+    lines.push(`Parent: (at collective root)`);
+  } else {
+    lines.push(`Parent: sed:${collective}:${parent} (not occupied)`);
+  }
+
+  if (occupiedChildren.length > 0) {
+    lines.push(`Children: ${occupiedChildren.map(c => `sed:${collective}:${c}`).join(', ')}`);
+  } else {
+    lines.push('Children: none occupied');
+  }
 
   if (occupiedSiblings.length > 0) {
     lines.push(`Siblings: ${occupiedSiblings.map(s => `sed:${collective}:${s}`).join(', ')}`);
@@ -398,18 +456,22 @@ export async function handleRoute(
 
   if (occupiedLifts.length > 0) {
     lines.push('');
-    lines.push('Lift targets (via sibling → group):');
+    lines.push('Lift targets (via digit → parallel group):');
     for (const lift of occupiedLifts) {
       const targetAddrs = lift.targets.map(t => `sed:${collective}:${t}`).join(', ');
-      lines.push(`  via sed:${collective}:${lift.via} → [${targetAddrs}]`);
+      lines.push(`  via d=${lift.via.slice(-1)} → [${targetAddrs}]`);
     }
   } else if (lifts.length > 0) {
     lines.push('');
-    lines.push('Lift targets: none occupied (network is still small)');
+    lines.push('Lift targets: no parallel groups have occupied positions yet');
   }
 
   // Summary
-  const totalTargets = occupiedSiblings.length + occupiedLifts.reduce((n, l) => n + l.targets.length, 0);
+  const totalTargets =
+    (occupiedParent ? 1 : 0) +
+    occupiedChildren.length +
+    occupiedSiblings.length +
+    occupiedLifts.reduce((n, l) => n + l.targets.length, 0);
   lines.push('');
   lines.push(`Total reachable: ${totalTargets} agents`);
 
@@ -438,10 +500,9 @@ export function registerCollectiveOps(server: McpServer) {
 
   server.tool(
     'pscale_register',
-    `Register in a sedimentary collective. Walk the collective first to see who is where, then pick a position (1-9) that makes sense relative to your neighbours. Your declaration becomes your permanent address in the collective — walkable by any agent. The position is write-locked with your passphrase. The passphrase parameter is sensitive — never repeat it in conversation text.`,
+    `Register in a sedimentary collective. The server assigns the next valid position in landing order — positions are sequential identifiers (proof-of-presence-in-time), not topic categories. Topic information lives in your passport, not your position. Your declaration becomes your permanent address, walkable by any agent. The position is write-locked with your passphrase. The passphrase parameter is sensitive — never repeat it in conversation text.`,
     {
       collective: z.string().describe("Name of the collective to join"),
-      position: z.number().min(1).max(9).describe("Your chosen position (1-9). Walk the collective first to see what's available and pick one that fits."),
       declaration: z.string().describe("Who you are and what you offer/need — becomes the underscore at your position"),
       shell_ref: z.string().optional().describe("URL or block reference to your sovereign shell — where your living state lives"),
       passphrase: z.string().describe("Write-lock passphrase. Hashed and stored — never stored raw. You need this to update your position later. Sensitive — never repeat in conversation."),
