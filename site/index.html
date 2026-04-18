@@ -86,30 +86,10 @@
                cursor: pointer; letter-spacing: 0.04em;
                font-family: ui-monospace, "SF Mono", Menlo, monospace; }
   .theme-btn:hover { background: var(--panel); color: var(--ink); }
-  main { display: grid; grid-template-columns: 1fr 320px; gap: 0;
-         min-height: calc(100vh - 180px); }
-  #map-wrap { padding: 12px 20px 20px; overflow: auto; }
-  svg#map { width: 100%; height: auto; display: block; }
-  aside#detail { border-left: 1px solid var(--line); background: var(--panel);
-                 padding: 20px; font-size: 13px; overflow-y: auto;
-                 max-height: calc(100vh - 180px); position: sticky; top: 0; }
-  aside h2 { margin: 0 0 6px; font-size: 15px;
-             font-family: ui-monospace, "SF Mono", Menlo, monospace; }
-  aside .pill { display: inline-block; padding: 2px 8px; border-radius: 10px;
-                font-size: 11px; margin-right: 6px; margin-bottom: 4px;
-                font-family: ui-monospace, "SF Mono", Menlo, monospace;
-                background: var(--panel-2); border: 1px solid var(--line); }
-  aside .pill.live { color: var(--live); border-color: var(--live); }
-  aside .pill.partial { color: var(--partial); border-color: var(--partial); }
-  aside .pill.spec { color: var(--spec); border-color: var(--spec); }
-  aside .pill.vision { color: var(--vision); border-color: var(--vision); }
-  aside .pill.abandoned { color: var(--abandoned); border-color: var(--abandoned); }
-  aside .tools { margin-top: 10px; }
-  aside .tools code { display: inline-block; background: var(--panel-2);
-                      border: 1px solid var(--line); padding: 2px 6px;
-                      border-radius: 3px; margin: 2px; font-size: 11px; }
-  aside p { margin: 8px 0; }
-  aside .note { color: var(--ink-dim); font-style: italic; font-size: 12px; }
+  main { display: block; }
+  #map-wrap { padding: 12px 16px 16px; overflow-x: auto; overflow-y: visible; }
+  /* Map has a fixed minimum width; narrower viewports scroll. Details on hover via SVG <title>. */
+  svg#map { display: block; min-width: 2400px; height: auto; }
   footer { padding: 14px 24px; border-top: 1px solid var(--line);
            color: var(--ink-dim); font-size: 11px; display: flex; flex-wrap: wrap;
            gap: 18px; justify-content: space-between; }
@@ -135,13 +115,13 @@
   /* SVG node styling */
   .evo-band { fill: var(--panel); stroke: var(--line); }
   .evo-title { fill: var(--ink); font-family: ui-monospace, "SF Mono", Menlo, monospace;
-               font-size: 13px; font-weight: 600; }
-  .evo-title-sub { fill: var(--ink); font-size: 11px;
+               font-size: 15px; font-weight: 600; }
+  .evo-title-sub { fill: var(--ink); font-size: 13px;
                    font-family: ui-monospace, "SF Mono", Menlo, monospace; }
-  .evo-question { fill: var(--ink-dim); font-size: 11px; font-style: italic; }
-  .pos-header { fill: var(--ink-dim); font-size: 11px; font-weight: 600;
+  .evo-question { fill: var(--ink-dim); font-size: 12px; font-style: italic; }
+  .pos-header { fill: var(--ink-dim); font-size: 14px; font-weight: 600;
                 font-family: ui-monospace, "SF Mono", Menlo, monospace; }
-  .pos-thread { fill: var(--ink-dim); font-size: 9px; font-style: italic; }
+  .pos-thread { fill: var(--ink-dim); font-size: 11px; font-style: italic; }
   .grid-line { stroke: var(--line); stroke-width: 1; stroke-dasharray: 2 3; opacity: 0.5; }
   .node-rect { stroke-width: 1.5; cursor: pointer; rx: 4; ry: 4;
                transition: opacity 0.2s, transform 0.15s; }
@@ -151,10 +131,10 @@
   .node[data-status="spec"] .node-rect { fill: var(--spec); stroke: var(--spec); fill-opacity: var(--node-fill-opacity); stroke-dasharray: 4 3; }
   .node[data-status="vision"] .node-rect { fill: var(--vision); stroke: var(--vision); fill-opacity: var(--node-fill-opacity-vision); stroke-dasharray: 2 3; }
   .node[data-status="abandoned"] .node-rect { fill: var(--abandoned); stroke: var(--abandoned); fill-opacity: var(--node-fill-opacity); stroke-dasharray: 1 3; }
-  .node-id { fill: var(--ink-dim); font-size: 10px;
+  .node-id { fill: var(--ink-dim); font-size: 12px;
              font-family: ui-monospace, "SF Mono", Menlo, monospace; }
-  .node-label { fill: var(--ink); font-size: 12px; font-weight: 500; }
-  .node-note { fill: var(--ink-dim); font-size: 10px; font-style: italic; }
+  .node-label { fill: var(--ink); font-size: 14px; font-weight: 500; }
+  .node-note { fill: var(--ink-dim); font-size: 11px; font-style: italic; }
   .node[data-next="true"] .node-rect { stroke: var(--accent); stroke-width: 2.5; }
   .next-pulse { fill: var(--accent); animation: pulse 2s infinite; }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
@@ -179,22 +159,19 @@
   svg#map.layer-activity-on .layer-activity { display: block; }
 
   .tool-chip { fill: var(--panel-2); stroke: var(--line); stroke-width: 1; }
-  .tool-chip-text { fill: var(--ink-dim); font-size: 9px;
+  .tool-chip-text { fill: var(--ink-dim); font-size: 11px;
                     font-family: ui-monospace, "SF Mono", Menlo, monospace; }
-  .cost-badge { fill: var(--panel-2); stroke: var(--accent); stroke-dasharray: 2 2; }
-  .cost-text { fill: var(--accent); font-size: 10px;
+  .meta-col-header { fill: var(--ink-dim); font-size: 13px; font-weight: 600;
+                     letter-spacing: 0.04em; text-transform: uppercase;
+                     font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .cost-text { fill: var(--accent); font-size: 13px;
                font-family: ui-monospace, "SF Mono", Menlo, monospace; }
-  .agent-rung, .human-type { fill: var(--ink-dim); font-size: 11px;
+  .agent-rung, .human-type { fill: var(--ink); font-size: 13px;
                               font-family: ui-monospace, "SF Mono", Menlo, monospace; }
   .activity-num { fill: var(--accent); font-size: 14px; font-weight: 600;
                   font-family: ui-monospace, "SF Mono", Menlo, monospace; }
-  .activity-label { fill: var(--ink-dim); font-size: 9px; }
-
-  @media (max-width: 900px) {
-    main { grid-template-columns: 1fr; }
-    aside#detail { border-left: none; border-top: 1px solid var(--line);
-                   position: static; max-height: none; }
-  }
+  .activity-label { fill: var(--ink-dim); font-size: 12px;
+                    font-family: ui-monospace, "SF Mono", Menlo, monospace; }
 </style>
 </head>
 <body>
@@ -206,7 +183,7 @@
     <a href="state.json"><code>state.json</code></a>
     (edited session-by-session like
     <a href="https://github.com/pscale-commons/pscale-mcp-server/blob/main/CLAUDE.md">CLAUDE.md</a>).
-    click any node for detail.
+    hover any node for detail. map scrolls horizontally — nothing is hidden.
   </div>
   <div class="controls">
     <div class="ctrl-group">
@@ -247,19 +224,8 @@
 
 <main>
   <div id="map-wrap">
-    <svg id="map" viewBox="0 0 1600 740" preserveAspectRatio="xMidYMin meet"></svg>
+    <svg id="map" viewBox="0 0 2420 820" preserveAspectRatio="xMinYMin meet"></svg>
   </div>
-  <aside id="detail">
-    <h2>map legend</h2>
-    <p>click any node to inspect: status, tools, notes, cost.</p>
-    <p><span class="pill live">live</span> deployed and working</p>
-    <p><span class="pill partial">partial</span> coded but under-exercised</p>
-    <p><span class="pill spec">spec</span> specified, not coded</p>
-    <p><span class="pill vision">vision</span> named, not yet specified</p>
-    <p><span class="pill abandoned">abandoned</span> built then set aside</p>
-    <p class="note">gold border = on the "next" priority list.</p>
-    <p class="note">raw data: <a href="state.json" style="color:var(--accent)">state.json</a></p>
-  </aside>
 </main>
 
 <footer>
@@ -311,19 +277,33 @@
   // Rows = evolutions (Evo 4 at top, Evo 0 at bottom — foundation at bottom).
   // Columns 1-9 = positions. Same position across rows = a "thread" (role across time).
   // Position 0 (e.g. 4.0 Murmuration) spans the full row width.
-  // Left gutter = evo label + question.  Right gutter = agent / human / cost / activity.
-  const VB_W = 1600, VB_H = 740;
-  const LEFT_W = 160;              // evo label gutter
-  const RIGHT_W = 210;              // metadata gutter
-  const COL_HEADER_H = 36;
+  // Right side: four explicit columns — agent ladder, humans, cost/revenue, activity.
+  // Map is deliberately wider than most screens — map-wrap scrolls horizontally.
+  const VB_W = 2420, VB_H = 820;
+  const LEFT_W = 180;               // evo label gutter
+  const COL_HEADER_H = 48;
   const CELL_COUNT = 9;
-  const CELLS_X = LEFT_W;
-  const CELLS_W = VB_W - LEFT_W - RIGHT_W;
-  const CELL_W = CELLS_W / CELL_COUNT;
-  const ROW_H = 128;
+  const CELL_W = 140;
+  const POS_X = LEFT_W;
+  const POS_W = CELL_COUNT * CELL_W; // 1260
+  const META_X = POS_X + POS_W;      // 1440
+  const ROW_H = 148;
   const ROW_GAP = 4;
-  const ROWS_Y = COL_HEADER_H + 8;
-  const NODE_PAD = 5;               // internal padding inside a cell
+  const ROWS_Y = COL_HEADER_H + 10;
+  const NODE_PAD = 6;                // internal padding inside a cell
+
+  // Four named metadata columns on the right. Each toggleable via overlay.
+  const META_COLS = [
+    { key: 'agents',   label: 'agent ladder',   width: 200 },
+    { key: 'humans',   label: 'humans',         width: 220 },
+    { key: 'cost',     label: 'cost / revenue', width: 220 },
+    { key: 'activity', label: 'activity',       width: 240 },
+  ];
+  // Pre-compute each column's x offset.
+  {
+    let mx = META_X;
+    for (const c of META_COLS) { c._x = mx; mx += c.width; }
+  }
 
   // Column-header labels identifying the structural threads.
   const threadLabels = {
@@ -341,34 +321,63 @@
   // Helper: truncate string to n chars with ellipsis.
   const truncate = (s, n) => (s && s.length > n ? s.slice(0, n - 1) + '…' : (s || ''));
 
-  // ─── Column headers (positions 1..9) and vertical grid lines ───
+  // ─── Column headers: positions 1..9 + four metadata columns ───
   const headerG = el('g', { class: 'col-headers' });
+
+  // Position headers 1-9 (with thread labels below)
   for (let p = 1; p <= CELL_COUNT; p++) {
-    const cx = CELLS_X + (p - 1) * CELL_W + CELL_W / 2;
+    const cx = POS_X + (p - 1) * CELL_W + CELL_W / 2;
     headerG.appendChild(el('text', {
-      class: 'pos-header', x: cx, y: COL_HEADER_H - 18, 'text-anchor': 'middle'
+      class: 'pos-header', x: cx, y: COL_HEADER_H - 26, 'text-anchor': 'middle'
     }, String(p)));
     if (threadLabels[p]) {
       headerG.appendChild(el('text', {
-        class: 'pos-thread', x: cx, y: COL_HEADER_H - 4, 'text-anchor': 'middle'
+        class: 'pos-thread', x: cx, y: COL_HEADER_H - 10, 'text-anchor': 'middle'
       }, threadLabels[p]));
     }
-    // vertical grid line from header down through all rows
     headerG.appendChild(el('line', {
       class: 'grid-line',
-      x1: CELLS_X + (p - 1) * CELL_W, y1: COL_HEADER_H,
-      x2: CELLS_X + (p - 1) * CELL_W, y2: VB_H - 6,
+      x1: POS_X + (p - 1) * CELL_W, y1: COL_HEADER_H,
+      x2: POS_X + (p - 1) * CELL_W, y2: VB_H - 6,
     }));
   }
-  // right-edge grid line
+  // Stronger divider between positions and metadata columns
   headerG.appendChild(el('line', {
     class: 'grid-line',
-    x1: CELLS_X + CELLS_W, y1: COL_HEADER_H,
-    x2: CELLS_X + CELLS_W, y2: VB_H - 6,
+    x1: META_X, y1: COL_HEADER_H, x2: META_X, y2: VB_H - 6,
+    'stroke-width': 1.5, 'stroke-dasharray': 'none',
   }));
+
+  // Metadata column headers — each wrapped in its overlay layer group
+  META_COLS.forEach(col => {
+    const h = el('g', { class: 'layer layer-' + col.key });
+    h.appendChild(el('text', {
+      class: 'meta-col-header', x: col._x + 14, y: COL_HEADER_H - 14
+    }, col.label));
+    h.appendChild(el('line', {
+      class: 'grid-line',
+      x1: col._x + col.width, y1: COL_HEADER_H,
+      x2: col._x + col.width, y2: VB_H - 6,
+    }));
+    headerG.appendChild(h);
+  });
   svg.appendChild(headerG);
 
+  // Helper: wrap text to fit a given width; returns array of lines.
+  function wrapLines(text, maxChars) {
+    const words = String(text).split(' ');
+    const lines = [];
+    let cur = '';
+    for (const w of words) {
+      if ((cur ? cur + ' ' + w : w).length <= maxChars) cur = cur ? cur + ' ' + w : w;
+      else { if (cur) lines.push(cur); cur = w; }
+    }
+    if (cur) lines.push(cur);
+    return lines;
+  }
+
   // Helper: render a single node card into parent, at the given rect.
+  // Full detail is exposed via an SVG <title> element (native browser tooltip on hover).
   function renderNode(node, evo, parent, rect) {
     const { x, y, w, h } = rect;
     const ng = el('g', {
@@ -379,6 +388,18 @@
       'data-next': node.next ? 'true' : 'false',
     });
 
+    // Hover tooltip — all the info that used to be in the side panel.
+    const tooltipLines = [
+      `${node.id} · ${node.label}`,
+      `[${node.status}${node.next ? ' · on next list' : ''}] ${node.kind}`,
+      `Evo ${evo.id} — ${evo.title}`,
+    ];
+    if (node.desc) tooltipLines.push('', node.desc);
+    if (node.note) tooltipLines.push('', 'Note: ' + node.note);
+    if (node.cost) tooltipLines.push('', 'Cost: ' + node.cost);
+    if (node.tools && node.tools.length) tooltipLines.push('', 'Tools: ' + node.tools.join(', '));
+    ng.appendChild(el('title', {}, tooltipLines.join('\n')));
+
     ng.appendChild(el('rect', {
       class: 'node-rect', x, y, width: w, height: h
     }));
@@ -386,25 +407,29 @@
                   : node.kind === 'infrastructure' ? ' (infra)'
                   : node.kind === 'emergent' ? ' (emergent)' : '';
     ng.appendChild(el('text', {
-      class: 'node-id', x: x + 6, y: y + 12
+      class: 'node-id', x: x + 8, y: y + 16
     }, node.id + kindTag));
-    ng.appendChild(el('text', {
-      class: 'node-label', x: x + 6, y: y + 28
-    }, truncate(node.label, Math.floor(w / 6.2))));
 
-    // Practices overlay: note text inside card
+    // Label — wrap to up to 2 lines if long.
+    const labelMaxChars = Math.max(6, Math.floor((w - 12) / 7));
+    const labelLines = wrapLines(node.label, labelMaxChars).slice(0, 2);
+    labelLines.forEach((line, i) => {
+      ng.appendChild(el('text', {
+        class: 'node-label', x: x + 8, y: y + 34 + i * 16
+      }, line));
+    });
+    const labelBottomY = 34 + (labelLines.length - 1) * 16;
+
+    // Practices overlay: note text inside card, below the label
     if (node.note) {
       const noteG = el('g', { class: 'layer layer-practices' });
-      const MAX = Math.floor(w / 4.8);
-      const words = node.note.split(' ');
-      let l1 = '', l2 = '';
-      for (const wd of words) {
-        if ((l1 + ' ' + wd).length < MAX) l1 = l1 ? l1 + ' ' + wd : wd;
-        else if ((l2 + ' ' + wd).length < MAX) l2 = l2 ? l2 + ' ' + wd : wd;
-        else { l2 = l2 + '…'; break; }
-      }
-      noteG.appendChild(el('text', { class: 'node-note', x: x + 6, y: y + 44 }, l1));
-      if (l2) noteG.appendChild(el('text', { class: 'node-note', x: x + 6, y: y + 56 }, l2));
+      const noteMaxChars = Math.max(10, Math.floor((w - 12) / 5.4));
+      const noteLines = wrapLines(node.note, noteMaxChars).slice(0, 2);
+      noteLines.forEach((line, i) => {
+        noteG.appendChild(el('text', {
+          class: 'node-note', x: x + 8, y: y + labelBottomY + 16 + i * 13
+        }, line));
+      });
       ng.appendChild(noteG);
     }
 
@@ -418,21 +443,21 @@
     // Tools overlay — bottom strip
     if (node.tools && node.tools.length) {
       const toolsG = el('g', { class: 'layer layer-tools' });
-      const chipH = 12;
+      const chipH = 14;
       const cy = y + h - 8;
       const rightEdge = x + w - 4;
-      let cx = x + 6;
+      let cx = x + 8;
       let shown = 0;
       for (let idx = 0; idx < node.tools.length; idx++) {
         const t = node.tools[idx];
-        const cw = Math.max(22, t.length * 4.8 + 6);
-        const reserve = (idx < node.tools.length - 1) ? 28 : 0;
+        const cw = Math.max(24, t.length * 5.6 + 6);
+        const reserve = (idx < node.tools.length - 1) ? 32 : 0;
         if (cx + cw + reserve > rightEdge) break;
         toolsG.appendChild(el('rect', {
           class: 'tool-chip', x: cx, y: cy - chipH + 3, width: cw, height: chipH, rx: 2
         }));
         toolsG.appendChild(el('text', {
-          class: 'tool-chip-text', x: cx + 3, y: cy + 1
+          class: 'tool-chip-text', x: cx + 4, y: cy + 2
         }, t));
         cx += cw + 3;
         shown++;
@@ -440,18 +465,17 @@
       const remaining = node.tools.length - shown;
       if (remaining > 0) {
         const label = '+' + remaining;
-        const cw = Math.max(22, label.length * 6 + 6);
+        const cw = Math.max(24, label.length * 7 + 6);
         toolsG.appendChild(el('rect', {
           class: 'tool-chip', x: cx, y: cy - chipH + 3, width: cw, height: chipH, rx: 2
         }));
         toolsG.appendChild(el('text', {
-          class: 'tool-chip-text', x: cx + 3, y: cy + 1
+          class: 'tool-chip-text', x: cx + 4, y: cy + 2
         }, label));
       }
       ng.appendChild(toolsG);
     }
 
-    ng.addEventListener('click', () => showDetail(node, evo));
     parent.appendChild(ng);
   }
 
@@ -484,13 +508,14 @@
       (byPos[p] = byPos[p] || []).push(n);
     });
 
-    // Position 0 — full-row-width card (e.g. 4.0 Murmuration)
+    // Position 0 — full-row-width card (e.g. 4.0 Murmuration), spans only the
+    // position-columns area, not the metadata columns.
     if (byPos[0]) {
       byPos[0].forEach(node => {
         renderNode(node, evo, g, {
-          x: CELLS_X + NODE_PAD,
+          x: POS_X + NODE_PAD,
           y: y + NODE_PAD,
-          w: CELLS_W - NODE_PAD * 2,
+          w: POS_W - NODE_PAD * 2,
           h: ROW_H - NODE_PAD * 2,
         });
       });
@@ -500,7 +525,7 @@
     for (let p = 1; p <= CELL_COUNT; p++) {
       const nodesHere = byPos[p] || [];
       if (!nodesHere.length) continue;
-      const cellX = CELLS_X + (p - 1) * CELL_W;
+      const cellX = POS_X + (p - 1) * CELL_W;
       const usableH = ROW_H - NODE_PAD * 2;
       const subH = (usableH - (nodesHere.length - 1) * 3) / nodesHere.length;
       nodesHere.forEach((node, ni) => {
@@ -513,53 +538,47 @@
       });
     }
 
-    // Right gutter: metadata (cost / agent / human / activity), each overlay-toggleable
-    const rx = VB_W - RIGHT_W + 10;
+    // Right metadata — four explicit columns: agent ladder, humans, cost, activity.
+    // Each rendered as flat text (no boxes), wrapped to fit its column width.
+    const renderMetaLines = (colKey, textContent, cls, glyph) => {
+      const col = META_COLS.find(c => c.key === colKey);
+      const g2 = el('g', { class: 'layer layer-' + colKey });
+      const maxChars = Math.floor((col.width - 28) / 7.2);
+      const rendered = glyph ? (glyph + ' ' + textContent) : textContent;
+      const lines = wrapLines(rendered, maxChars).slice(0, 3);
+      lines.forEach((line, i) => {
+        g2.appendChild(el('text', {
+          class: cls, x: col._x + 14, y: y + 24 + i * 17
+        }, line));
+      });
+      g.appendChild(g2);
+    };
 
-    // Cost
+    // Agent ladder column
+    if (evo.agent && evo.agent !== '—') {
+      renderMetaLines('agents', evo.agent, 'agent-rung', '◎');
+    }
+    // Humans column
+    if (evo.human && evo.human !== '—') {
+      renderMetaLines('humans', evo.human, 'human-type', '☺');
+    }
+    // Cost / revenue column — pull from any infra/emergent node with a cost string
     const infraNode = evo.nodes.find(n => (n.kind === 'infrastructure' || n.kind === 'emergent') && n.cost);
     if (infraNode) {
-      const costG = el('g', { class: 'layer layer-cost' });
-      costG.appendChild(el('text', {
-        class: 'cost-text', x: rx, y: y + 20
-      }, '◆ cost'));
-      const words = infraNode.cost.split(' ');
-      const MAX = 24;
-      let l1 = '', l2 = '';
-      for (const wd of words) {
-        if ((l1 + ' ' + wd).length < MAX) l1 = l1 ? l1 + ' ' + wd : wd;
-        else l2 = l2 ? l2 + ' ' + wd : wd;
-      }
-      costG.appendChild(el('text', { class: 'cost-text', x: rx, y: y + 34 }, l1));
-      if (l2) costG.appendChild(el('text', { class: 'cost-text', x: rx, y: y + 46 }, l2));
-      g.appendChild(costG);
+      renderMetaLines('cost', infraNode.cost, 'cost-text', '◆');
     }
-
-    // Agent rung
-    const agentG = el('g', { class: 'layer layer-agents' });
-    agentG.appendChild(el('text', {
-      class: 'agent-rung', x: rx, y: y + 70
-    }, '◎ ' + truncate(evo.agent, 30)));
-    g.appendChild(agentG);
-
-    // Human type
-    const humanG = el('g', { class: 'layer layer-humans' });
-    humanG.appendChild(el('text', {
-      class: 'human-type', x: rx, y: y + 88
-    }, '☺ ' + truncate(evo.human, 30)));
-    g.appendChild(humanG);
-
-    // Activity
+    // Activity column — render each key-value pair on its own line
+    const col = META_COLS.find(c => c.key === 'activity');
     const actG = el('g', { class: 'layer layer-activity' });
     const actEntries = Object.entries(evo.activity || {});
-    if (actEntries.length) {
-      const activityLine = actEntries
-        .map(([k, v]) => String(v) + ' ' + k.replace(/_/g, ' '))
-        .join(' · ');
+    actEntries.forEach(([k, v], i) => {
       actG.appendChild(el('text', {
-        class: 'activity-label', x: rx, y: y + 110
-      }, truncate('▮ ' + activityLine, 34)));
-    }
+        class: 'activity-num', x: col._x + 14, y: y + 24 + i * 20
+      }, String(v)));
+      actG.appendChild(el('text', {
+        class: 'activity-label', x: col._x + 48, y: y + 24 + i * 20
+      }, k.replace(/_/g, ' ')));
+    });
     g.appendChild(actG);
 
     svg.appendChild(g);
@@ -581,24 +600,6 @@
     setLayer(cb.dataset.layer, cb.checked);
     cb.addEventListener('change', () => setLayer(cb.dataset.layer, cb.checked));
   });
-
-  const detail = document.getElementById('detail');
-  function showDetail(node, evo) {
-    const tools = (node.tools || []).map(t => `<code>${t}</code>`).join('');
-    detail.innerHTML = `
-      <h2>${node.id} · ${node.label}</h2>
-      <p>
-        <span class="pill ${node.status}">${node.status}</span>
-        <span class="pill">${node.kind}</span>
-        ${node.next ? '<span class="pill partial">on next list</span>' : ''}
-      </p>
-      <p><strong>Evo ${evo.id}</strong> — ${evo.title} · <em>"${evo.question}"</em></p>
-      <p>${node.desc || ''}</p>
-      ${node.note ? `<p class="note">${node.note}</p>` : ''}
-      ${node.cost ? `<p><strong>cost:</strong> ${node.cost}</p>` : ''}
-      ${tools ? `<div class="tools"><strong>tools</strong><br>${tools}</div>` : ''}
-    `;
-  }
 
   document.getElementById('updated-stamp').textContent =
     'updated ' + state.meta.updated + ' · ' + state.meta.source;
