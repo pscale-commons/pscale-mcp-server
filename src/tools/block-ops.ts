@@ -46,10 +46,16 @@ export async function handleWrite(
   },
 ) {
   if (target) setTarget(target);
-  // Sedimentary block write protection
-  if (name.startsWith('sed:') || agent_id.startsWith('sed:')) {
+
+  // Is this a sedimentary block? Determines parameter semantics below.
+  const isSedBlock = name.startsWith('sed:') || agent_id.startsWith('sed:');
+
+  // Sedimentary write-lock proof. Accept either `secret` (unified naming,
+  // matches inbox tools) or `passphrase` (legacy alias). Either field works.
+  const lockProof = passphrase ?? secret;
+  if (isSedBlock) {
     const collective = name.startsWith('sed:') ? name.slice(4) : agent_id.slice(4);
-    const check = await verifySedWrite(collective, address, passphrase);
+    const check = await verifySedWrite(collective, address, lockProof);
     if (!check.allowed) {
       return {
         content: [{ type: 'text' as const, text: check.error || 'Write denied.' }],
@@ -72,23 +78,28 @@ export async function handleWrite(
   const block = row.block as Block;
   const writeAddress = address === '0' ? '_' : address;
 
-  // Encrypt content if secret provided
-  const valueToWrite = secret
-    ? await selfEncrypt(content, secret, agent_id)
+  // Encryption seed. On sed: blocks, `secret` is consumed as the lock proof
+  // and content stays plaintext (conventions / shared declarations need to
+  // be readable by all). On ordinary blocks, `secret` continues to mean
+  // "encrypt this self-write" as it always has.
+  const encryptionSeed = isSedBlock ? undefined : secret;
+
+  const valueToWrite = encryptionSeed
+    ? await selfEncrypt(content, encryptionSeed, agent_id)
     : content;
 
   writeAt(block, writeAddress, valueToWrite);
 
   await upsertBlock(agent_id, name, row.block_type, block);
 
-  // Confirm — show decrypted view if secret provided
-  const viewBlock = secret ? await decryptBlockNodes(block, secret, agent_id) : block;
+  // Confirm — show decrypted view if encryption was used
+  const viewBlock = encryptionSeed ? await decryptBlockNodes(block, encryptionSeed, agent_id) : block;
   const confirmation = bsp(viewBlock, address);
   return {
     content: [
       {
         type: 'text' as const,
-        text: `Written to ${name} at ${address}.${secret ? ' (encrypted)' : ''}\n${fmtResult(confirmation)}`,
+        text: `Written to ${name} at ${address}.${encryptionSeed ? ' (encrypted)' : ''}\n${fmtResult(confirmation)}`,
       },
     ],
   };
@@ -181,7 +192,7 @@ export function registerBlockOps(server: McpServer) {
 
   server.tool(
     'pscale_write',
-    `Write content to a specific address in a pscale block. Address '1' writes to digit 1 at the root. Address '3.2' writes to digit 2 inside digit 3. Address '0' writes to the underscore (summary). Creates intermediate nodes as needed. Add 'secret' to encrypt the content (gray) — only you can read it back.`,
+    `Write content to a specific address in a pscale block. Address '1' writes to digit 1 at the root. Address '3.2' writes to digit 2 inside digit 3. Address '0' writes to the underscore (summary). Creates intermediate nodes as needed. For sedimentary (sed:) blocks, 'secret' is required at occupied positions and acts as the registration-passphrase write-lock proof. The same 'secret' also enables gray (encrypted) self-storage — only you can decrypt it back.`,
     {
       agent_id: z.string(),
       name: z.string(),
@@ -194,11 +205,11 @@ export function registerBlockOps(server: McpServer) {
       secret: z
         .string()
         .optional()
-        .describe('Your passphrase or block hash. When provided, encrypts the content. Only you can decrypt it with the same secret.'),
+        .describe('On sed: blocks: the registration passphrase that proves ownership of the position you are writing to (or any sub-address under it). Content stays plaintext — sed: data is shared. On ordinary blocks: encrypts the content for self-storage (only you can decrypt with the same secret). Sensitive — never repeat in conversation.'),
       passphrase: z
         .string()
         .optional()
-        .describe('Required when writing to an occupied position in a sedimentary (sed:) block. The passphrase you used at registration. Sensitive — never repeat in conversation.'),
+        .describe('DEPRECATED — kept as an alias for `secret`. Use `secret` instead. Sensitive — never repeat in conversation.'),
       target: z.string().optional().describe(TARGET_DESC),
     },
     handleWrite,

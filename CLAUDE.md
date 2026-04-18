@@ -470,6 +470,41 @@ blocks/
 
 **Note on the "moved repository" notice**: pushes to `origin` print a redirect warning because the local remote points at `happyseaurchin/pscale-mcp-server` while the canonical home is `pscale-commons/pscale-mcp-server`. Push works through the redirect. Run `git remote set-url origin https://github.com/pscale-commons/pscale-mcp-server.git` to silence it.
 
+## The 18 April 2026 session — first sed: collectives + API tidy
+
+**Sync check first**: confirmed local = origin = Railway = `ea92dff` (the 17 April Level 2 commit + a separate widget commit by david). CLAUDE.md was the only out-of-date thing. Updated `Where we are` and added the 17 April entry above.
+
+**Three sed: collectives created on Railway** (live):
+
+- `sed:conventions` — protected directory of protocol conventions. Root locked by `freedom142`.
+  - Position 1 = commons rules (locked by `comber857`). Sub-rules at `1.1`–`1.7`: registration, identity proof, routing topology, ecosquared rider, verify_rider, bypass, passport convention.
+  - Position 2 = games rules (locked by `ubarakar142`). Sub-rules at `2.1`–`2.5`: registration, turn loop, fairness, action-type palette, chronicle.
+- `sed:commons` — Level 2 routing collective for agent registration. Root locked by `comber857`. Underscore points at `sed:conventions/conventions @ 1`.
+- `sed:onen` — multiplayer narrative coordination, venue `onen.ai`. Root locked by `ubarakar142`. Underscore points at `sed:conventions/conventions @ 2`.
+
+**Design decisions captured in conventions placement**:
+- Conventions live in their own block, not in the sed: collective's underscore — too long for an underscore, and pscale's "structure encodes meaning" principle says structured rules deserve a structured block.
+- One conventions block, with positions = domains. Position 1 = commons, 2 = games. Future domains take 3+ positions.
+- Each domain is sovereign within its sub-tree — its admin controls all writes under address N.x via that position's passphrase. Root passphrase only edits the directory descriptor (the underscore).
+- URLs (hermitcrab.me, onen.ai) are convention text, not code-level identifiers — sed: collectives are not keyed to URLs.
+
+**API tidy on `pscale_write`** ([src/tools/block-ops.ts](src/tools/block-ops.ts)):
+- `secret` is now the unified parameter name. On sed: blocks it acts as the registration-passphrase write-lock proof. On ordinary blocks it continues to encrypt content for self-storage (backward compatible).
+- `passphrase` retained as a deprecated alias on sed: writes — same effect as `secret`.
+- **Bug found and fixed mid-flight**: my first cut made `secret` do *both* lock-proof AND auto-encryption on sed: blocks, which silently encrypted the freshly-written conventions at `1.1`. Conventions must be plaintext (publicly readable). Fixed by making `secret` lock-proof-only on sed: blocks; encryption on sed: blocks not currently supported via `secret` (would require an explicit flag — deferred).
+- Lesson: any time a parameter has dual purpose, an existing call site can silently inherit the second purpose. Test the round-trip (write then walk) on shared data, not just the immediate response.
+
+**CRITICAL — local server shares Railway's Supabase**: When running `npx tsx src/index.ts` against `SUPABASE_ANON_KEY=...`, the local MCP writes to the SAME database Railway reads from. Smoke tests that write data will overwrite live data unless directed at a separate dev DB. Twice today I overwrote conventions `1.1` with smoke-test placeholder text and had to restore. For real isolation, set up a separate Supabase project for dev.
+
+**Tool naming inconsistency note**: After today's tidy, sed:-related parameter naming is mostly unified — inbox tools use `secret` (dual purpose: ownership + gray encryption); write/walk use `secret` (dual purpose on ordinary blocks only; sed: blocks treat it as lock-proof). The remaining wart: `pscale_write` still accepts `passphrase` as a deprecated alias. Drop it in a future cleanup once no caller uses it.
+
+**Files changed**: [src/tools/block-ops.ts](src/tools/block-ops.ts) (handler + schema descriptions). No new tools, no new dependencies.
+
+**Not yet done**:
+- David has not yet registered a position in `sed:commons` or `sed:onen`.
+- No probe / signal_return test run yet — collectives have only their roots populated.
+- Conventions block: positions 3+ (research, supply chain, etc.) unclaimed and currently open-write.
+
 ## Where we are now — the honest state (updated 18 April 2026)
 
 **We are at the boundary of Evolution 1 (Discovery) and Evolution 2 (Trust Ecology), with Level 2 infrastructure complete.** Multiple agents have signalled. Beaches are populated. Supabase relay (0.9) is operational. Federated beach (1.9) is live at happyseaurchin.com. Sedimentary registration (1.4) is deployed. Level 2 messaging (probe/signal_return + ecosquared rider + arithmetic verification) is deployed.
@@ -490,8 +525,8 @@ blocks/
 - **`pscale_verify_rider`** — deterministic arithmetic check (sha256 chain, credit conservation, SQ recompute) returning pass/warn/fail/skip
 
 **Not working / not built**:
-- No `sed:commons` collective created yet — first act of Level 2 testing
-- No `sed:onen` (or any application-flavoured) collective created yet
+- No registrants in `sed:commons` or `sed:onen` yet (collectives exist; positions 1-9 unclaimed)
+- No probe / signal_return test run yet
 - Zero grain completions. Nobody has performed the grain act.
 - No persistent agent. Beach-crab v0 built and abandoned (stateless Haiku chat was frustrating). v1 needs a proper kernel.
 - `pscale_recall` level↔depth mapping still off.
@@ -502,15 +537,17 @@ blocks/
 
 ## Next priorities — in order (updated 18 April 2026)
 
-1. **Create `sed:commons`** — generic Level 2 routing collective. Conventions in root underscore reference `pscale_verify_rider` as the verification path. Canonical gathering beach: hermitcrab.me. David registers first; invite others.
+1. **David registers in `sed:commons`** — pick a position (1-9), set a registration passphrase, run `pscale_register`. Invite a second agent to register at another position.
 
-2. **Create `sed:onen`** — application-flavoured collective demonstrating that Level 2 substrate is application-neutral. Conventions describe a minimal multiplayer narrative RPG: world-keeper at position 1, players at 2-9, intent submission via probe, peer resolution via signal_return, action-type pscale coordinates. Venue: onen.ai.
+2. **Probe → signal_return test in `sed:commons`** — two agents direct, then three-agent relay (per Level 2 addendum §9 steps 3-6). Verify chain validation, ownership rejection, verify_rider verdicts on real traffic.
 
-3. **Probe → signal_return test in `sed:commons`** — two agents direct, then three-agent relay (per Level 2 addendum §9 steps 3-6). Verify chain validation via `forwarded_log`, ownership rejection, verify_rider verdicts.
+3. **David registers as world-keeper at `sed:onen` position 1** — declaration includes world setting, starting locations, and any extension to the action-type palette. Then register a player at position 2 and run the first turn loop.
 
-4. **First onen play session** — two players in `sed:onen`, run the turn loop end-to-end. This is the demonstration that Level 2 is the routing substrate and Level 3 (capabilities, doing things in the world) is what onen begins to need next.
+4. **First onen play session** — two players in `sed:onen` exchange intent (probe) and resolution (signal_return). This is the demonstration that Level 2 is the routing substrate and Level 3 (capabilities, doing things in the world) is what onen begins to need next.
 
 5. **`pscale_relay`** — stateless multi-hop forwarding with relay chain tracking. Next spec after Level 2 testing in the wild.
+
+6. **Final `passphrase` deprecation** — once no caller uses the deprecated alias on `pscale_write`, drop it. Low priority.
 
 5. **Sedimentary compaction**: When positions 1-9 fill, summarise declarations. Manual first (a designated agent triggers it), automatic later (server-side LLM call).
 
