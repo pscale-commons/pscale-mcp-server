@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { createServer } from './server.js';
 import { handleBeach, handleLifeguard, handleSuccess, handleCheckout, handleWebhook } from './routes/payment.js';
+import { handleEcologyPulse, handleEcologyAgents } from './routes/ecology.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -89,6 +90,16 @@ const httpServer = createHttpServer(async (req, res) => {
   }
   if (url.pathname === '/webhook' && req.method === 'POST') {
     await handleWebhook(req, res);
+    return;
+  }
+
+  // ── Ecology map read-only API (Phase A) ──
+  if (url.pathname === '/ecology/pulse' && req.method === 'GET') {
+    await handleEcologyPulse(req, res);
+    return;
+  }
+  if (url.pathname === '/ecology/agents' && req.method === 'GET') {
+    await handleEcologyAgents(req, res);
     return;
   }
 
