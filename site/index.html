@@ -149,14 +149,11 @@
   /* full plan = everything */
   svg#map.filter-all .node { opacity: 1; }
 
-  /* Layers — toggled by classes on svg root */
+  /* Layers — only practices & tools are toggleable overlays (inside node cards). */
+  /* Metadata columns (agent/human/cost/activity) are always rendered as layout. */
   .layer { display: none; }
   svg#map.layer-practices-on .layer-practices { display: block; }
   svg#map.layer-tools-on .layer-tools { display: block; }
-  svg#map.layer-agents-on .layer-agents { display: block; }
-  svg#map.layer-humans-on .layer-humans { display: block; }
-  svg#map.layer-cost-on .layer-cost { display: block; }
-  svg#map.layer-activity-on .layer-activity { display: block; }
 
   .tool-chip { fill: var(--panel-2); stroke: var(--line); stroke-width: 1; }
   .tool-chip-text { fill: var(--ink-dim); font-size: 11px;
@@ -196,10 +193,6 @@
       <b>overlays</b>
       <label><input type="checkbox" data-layer="practices" checked> practices</label>
       <label><input type="checkbox" data-layer="tools"> tools</label>
-      <label><input type="checkbox" data-layer="agents" checked> agent ladder</label>
-      <label><input type="checkbox" data-layer="humans" checked> humans</label>
-      <label><input type="checkbox" data-layer="cost" checked> cost</label>
-      <label><input type="checkbox" data-layer="activity"> activity</label>
     </div>
     <div class="ctrl-group">
       <button id="theme-toggle" type="button" class="theme-btn" aria-label="Toggle light/dark theme"></button>
@@ -348,18 +341,16 @@
     'stroke-width': 1.5, 'stroke-dasharray': 'none',
   }));
 
-  // Metadata column headers — each wrapped in its overlay layer group
+  // Metadata column headers — always visible (no overlay toggle).
   META_COLS.forEach(col => {
-    const h = el('g', { class: 'layer layer-' + col.key });
-    h.appendChild(el('text', {
+    headerG.appendChild(el('text', {
       class: 'meta-col-header', x: col._x + 14, y: COL_HEADER_H - 14
     }, col.label));
-    h.appendChild(el('line', {
+    headerG.appendChild(el('line', {
       class: 'grid-line',
       x1: col._x + col.width, y1: COL_HEADER_H,
       x2: col._x + col.width, y2: VB_H - 6,
     }));
-    headerG.appendChild(h);
   });
   svg.appendChild(headerG);
 
@@ -538,20 +529,18 @@
       });
     }
 
-    // Right metadata — four explicit columns: agent ladder, humans, cost, activity.
-    // Each rendered as flat text (no boxes), wrapped to fit its column width.
+    // Right metadata — four always-visible columns: agent ladder, humans, cost, activity.
+    // Flat text (no boxes), wrapped to fit its column width.
     const renderMetaLines = (colKey, textContent, cls, glyph) => {
       const col = META_COLS.find(c => c.key === colKey);
-      const g2 = el('g', { class: 'layer layer-' + colKey });
       const maxChars = Math.floor((col.width - 28) / 7.2);
       const rendered = glyph ? (glyph + ' ' + textContent) : textContent;
       const lines = wrapLines(rendered, maxChars).slice(0, 3);
       lines.forEach((line, i) => {
-        g2.appendChild(el('text', {
+        g.appendChild(el('text', {
           class: cls, x: col._x + 14, y: y + 24 + i * 17
         }, line));
       });
-      g.appendChild(g2);
     };
 
     // Agent ladder column
@@ -568,18 +557,16 @@
       renderMetaLines('cost', infraNode.cost, 'cost-text', '◆');
     }
     // Activity column — render each key-value pair on its own line
-    const col = META_COLS.find(c => c.key === 'activity');
-    const actG = el('g', { class: 'layer layer-activity' });
+    const actCol = META_COLS.find(c => c.key === 'activity');
     const actEntries = Object.entries(evo.activity || {});
     actEntries.forEach(([k, v], i) => {
-      actG.appendChild(el('text', {
-        class: 'activity-num', x: col._x + 14, y: y + 24 + i * 20
+      g.appendChild(el('text', {
+        class: 'activity-num', x: actCol._x + 14, y: y + 24 + i * 20
       }, String(v)));
-      actG.appendChild(el('text', {
-        class: 'activity-label', x: col._x + 48, y: y + 24 + i * 20
+      g.appendChild(el('text', {
+        class: 'activity-label', x: actCol._x + 48, y: y + 24 + i * 20
       }, k.replace(/_/g, ' ')));
     });
-    g.appendChild(actG);
 
     svg.appendChild(g);
   });
