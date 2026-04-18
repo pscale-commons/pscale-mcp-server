@@ -9,8 +9,23 @@
 <meta property="og:description" content="Live map of the pscale high-trust agent network — evolutions, practices, actors, cost. Data at state.json.">
 <meta property="og:type" content="website">
 <link rel="alternate" type="application/json" title="state data (machine-readable)" href="state.json">
+<script>
+  // Early theme init — avoids FOUC by setting data-theme before CSS evaluates.
+  (function () {
+    try {
+      var saved = localStorage.getItem('theme');
+      var systemLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+      var theme = saved || (systemLight ? 'light' : 'dark');
+      document.documentElement.setAttribute('data-theme', theme);
+    } catch (e) {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+  })();
+</script>
 <style>
-  :root {
+  /* Dark theme (default fallback + explicit) */
+  :root,
+  :root[data-theme="dark"] {
     --bg: #0f1114;
     --panel: #161a20;
     --panel-2: #1d222a;
@@ -23,6 +38,27 @@
     --vision: #666c76;
     --abandoned: #a04040;
     --accent: #e3b44a;
+    --node-fill-opacity: 0.18;
+    --node-fill-opacity-vision: 0.10;
+    color-scheme: dark;
+  }
+  /* Light theme */
+  :root[data-theme="light"] {
+    --bg: #f6f4ee;
+    --panel: #ffffff;
+    --panel-2: #ebe8e0;
+    --ink: #1f2328;
+    --ink-dim: #5b636d;
+    --line: #d9d5cd;
+    --live: #2f7a36;
+    --partial: #a96613;
+    --spec: #2a5fa6;
+    --vision: #5b636d;
+    --abandoned: #9a3333;
+    --accent: #a56f1a;
+    --node-fill-opacity: 0.22;
+    --node-fill-opacity-vision: 0.14;
+    color-scheme: light;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink);
@@ -44,6 +80,12 @@
                     text-transform: uppercase; font-size: 11px; }
   .ctrl-group label { cursor: pointer; user-select: none; }
   .ctrl-group input { margin-right: 4px; accent-color: var(--accent); }
+  .theme-btn { background: transparent; color: var(--ink-dim);
+               border: 1px solid var(--line); border-radius: 4px;
+               padding: 5px 10px; font: inherit; font-size: 11px;
+               cursor: pointer; letter-spacing: 0.04em;
+               font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .theme-btn:hover { background: var(--panel); color: var(--ink); }
   main { display: grid; grid-template-columns: 1fr 320px; gap: 0;
          min-height: calc(100vh - 180px); }
   #map-wrap { padding: 12px 20px 20px; overflow: auto; }
@@ -98,11 +140,11 @@
   .node-rect { stroke-width: 1.5; cursor: pointer; rx: 4; ry: 4;
                transition: opacity 0.2s, transform 0.15s; }
   .node-rect:hover { filter: brightness(1.2); }
-  .node[data-status="live"] .node-rect { fill: var(--live); stroke: var(--live); fill-opacity: 0.18; }
-  .node[data-status="partial"] .node-rect { fill: var(--partial); stroke: var(--partial); fill-opacity: 0.18; }
-  .node[data-status="spec"] .node-rect { fill: var(--spec); stroke: var(--spec); fill-opacity: 0.18; stroke-dasharray: 4 3; }
-  .node[data-status="vision"] .node-rect { fill: var(--vision); stroke: var(--vision); fill-opacity: 0.10; stroke-dasharray: 2 3; }
-  .node[data-status="abandoned"] .node-rect { fill: var(--abandoned); stroke: var(--abandoned); fill-opacity: 0.15; stroke-dasharray: 1 3; }
+  .node[data-status="live"] .node-rect { fill: var(--live); stroke: var(--live); fill-opacity: var(--node-fill-opacity); }
+  .node[data-status="partial"] .node-rect { fill: var(--partial); stroke: var(--partial); fill-opacity: var(--node-fill-opacity); }
+  .node[data-status="spec"] .node-rect { fill: var(--spec); stroke: var(--spec); fill-opacity: var(--node-fill-opacity); stroke-dasharray: 4 3; }
+  .node[data-status="vision"] .node-rect { fill: var(--vision); stroke: var(--vision); fill-opacity: var(--node-fill-opacity-vision); stroke-dasharray: 2 3; }
+  .node[data-status="abandoned"] .node-rect { fill: var(--abandoned); stroke: var(--abandoned); fill-opacity: var(--node-fill-opacity); stroke-dasharray: 1 3; }
   .node-id { fill: var(--ink-dim); font-size: 10px;
              font-family: ui-monospace, "SF Mono", Menlo, monospace; }
   .node-label { fill: var(--ink); font-size: 12px; font-weight: 500; }
@@ -171,6 +213,9 @@
       <label><input type="checkbox" data-layer="humans" checked> humans</label>
       <label><input type="checkbox" data-layer="cost" checked> cost</label>
       <label><input type="checkbox" data-layer="activity"> activity</label>
+    </div>
+    <div class="ctrl-group">
+      <button id="theme-toggle" type="button" class="theme-btn" aria-label="Toggle light/dark theme"></button>
     </div>
   </div>
 </header>
@@ -464,6 +509,21 @@
 
   document.getElementById('updated-stamp').textContent =
     'updated ' + state.meta.updated + ' · ' + state.meta.source;
+
+  // ----- Theme toggle -----
+  const themeBtn = document.getElementById('theme-toggle');
+  const root = document.documentElement;
+  const setBtnLabel = () => {
+    const theme = root.getAttribute('data-theme');
+    themeBtn.textContent = theme === 'light' ? '☾ dark' : '☀ light';
+  };
+  setBtnLabel();
+  themeBtn.addEventListener('click', () => {
+    const next = root.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem('theme', next); } catch (e) {}
+    setBtnLabel();
+  });
 })();
 </script>
 
