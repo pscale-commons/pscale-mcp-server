@@ -136,7 +136,13 @@
   .evo-band { fill: var(--panel); stroke: var(--line); }
   .evo-title { fill: var(--ink); font-family: ui-monospace, "SF Mono", Menlo, monospace;
                font-size: 13px; font-weight: 600; }
+  .evo-title-sub { fill: var(--ink); font-size: 11px;
+                   font-family: ui-monospace, "SF Mono", Menlo, monospace; }
   .evo-question { fill: var(--ink-dim); font-size: 11px; font-style: italic; }
+  .pos-header { fill: var(--ink-dim); font-size: 11px; font-weight: 600;
+                font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .pos-thread { fill: var(--ink-dim); font-size: 9px; font-style: italic; }
+  .grid-line { stroke: var(--line); stroke-width: 1; stroke-dasharray: 2 3; opacity: 0.5; }
   .node-rect { stroke-width: 1.5; cursor: pointer; rx: 4; ry: 4;
                transition: opacity 0.2s, transform 0.15s; }
   .node-rect:hover { filter: brightness(1.2); }
@@ -241,7 +247,7 @@
 
 <main>
   <div id="map-wrap">
-    <svg id="map" viewBox="0 0 1200 920" preserveAspectRatio="xMidYMin meet"></svg>
+    <svg id="map" viewBox="0 0 1600 740" preserveAspectRatio="xMidYMin meet"></svg>
   </div>
   <aside id="detail">
     <h2>map legend</h2>
@@ -301,175 +307,258 @@
     return;
   }
 
-  const VB_W = 1200, VB_H = 920;
-  const COLS = 5;
-  const COL_GAP = 12;
-  const COL_W = (VB_W - 40 - COL_GAP * (COLS - 1)) / COLS;
-  const colX = i => 20 + i * (COL_W + COL_GAP);
-  const ROW_HEADER_Y = 20, ROW_HEADER_H = 60;
-  const ROW_NODES_Y = 92;
-  const NODE_H = 78, NODE_GAP = 8;
-  const ROW_COST_H = 40, ROW_AGENT_H = 34, ROW_HUMAN_H = 28, ROW_ACT_H = 48;
+  // ─── TRANSPOSED LAYOUT ───
+  // Rows = evolutions (Evo 4 at top, Evo 0 at bottom — foundation at bottom).
+  // Columns 1-9 = positions. Same position across rows = a "thread" (role across time).
+  // Position 0 (e.g. 4.0 Murmuration) spans the full row width.
+  // Left gutter = evo label + question.  Right gutter = agent / human / cost / activity.
+  const VB_W = 1600, VB_H = 740;
+  const LEFT_W = 160;              // evo label gutter
+  const RIGHT_W = 210;              // metadata gutter
+  const COL_HEADER_H = 36;
+  const CELL_COUNT = 9;
+  const CELLS_X = LEFT_W;
+  const CELLS_W = VB_W - LEFT_W - RIGHT_W;
+  const CELL_W = CELLS_W / CELL_COUNT;
+  const ROW_H = 128;
+  const ROW_GAP = 4;
+  const ROWS_Y = COL_HEADER_H + 8;
+  const NODE_PAD = 5;               // internal padding inside a cell
 
-  const maxNodes = Math.max(...state.evos.map(e => e.nodes.length));
-  const stackH = maxNodes * (NODE_H + NODE_GAP);
-  const ROW_COST_Y = ROW_NODES_Y + stackH + 16;
-  const ROW_AGENT_Y = ROW_COST_Y + ROW_COST_H + 12;
-  const ROW_HUMAN_Y = ROW_AGENT_Y + ROW_AGENT_H + 4;
-  const ROW_ACT_Y = ROW_HUMAN_Y + ROW_HUMAN_H + 12;
+  // Column-header labels identifying the structural threads.
+  const threadLabels = {
+    1: 'initiation',
+    5: 'crab / middle',
+    9: 'infrastructure',
+  };
 
-  state.evos.forEach((evo, i) => {
-    const x = colX(i);
-    const g = el('g', { class: 'evo', 'data-evo': evo.id });
+  // Helper: extract position digit from node id. "1.5a" → 5, "4.0" → 0.
+  const positionOf = (id) => {
+    const m = String(id).match(/^\d+\.(\d+)/);
+    return m ? parseInt(m[1], 10) : 0;
+  };
 
-    g.appendChild(el('rect', {
-      class: 'evo-band',
-      x, y: ROW_HEADER_Y, width: COL_W, height: ROW_HEADER_H, rx: 4
+  // Helper: truncate string to n chars with ellipsis.
+  const truncate = (s, n) => (s && s.length > n ? s.slice(0, n - 1) + '…' : (s || ''));
+
+  // ─── Column headers (positions 1..9) and vertical grid lines ───
+  const headerG = el('g', { class: 'col-headers' });
+  for (let p = 1; p <= CELL_COUNT; p++) {
+    const cx = CELLS_X + (p - 1) * CELL_W + CELL_W / 2;
+    headerG.appendChild(el('text', {
+      class: 'pos-header', x: cx, y: COL_HEADER_H - 18, 'text-anchor': 'middle'
+    }, String(p)));
+    if (threadLabels[p]) {
+      headerG.appendChild(el('text', {
+        class: 'pos-thread', x: cx, y: COL_HEADER_H - 4, 'text-anchor': 'middle'
+      }, threadLabels[p]));
+    }
+    // vertical grid line from header down through all rows
+    headerG.appendChild(el('line', {
+      class: 'grid-line',
+      x1: CELLS_X + (p - 1) * CELL_W, y1: COL_HEADER_H,
+      x2: CELLS_X + (p - 1) * CELL_W, y2: VB_H - 6,
     }));
-    g.appendChild(el('text', {
-      class: 'evo-title', x: x + 10, y: ROW_HEADER_Y + 22
-    }, `Evo ${evo.id} · ${evo.title}`));
-    g.appendChild(el('text', {
-      class: 'evo-question', x: x + 10, y: ROW_HEADER_Y + 42
-    }, `"${evo.question}"`));
+  }
+  // right-edge grid line
+  headerG.appendChild(el('line', {
+    class: 'grid-line',
+    x1: CELLS_X + CELLS_W, y1: COL_HEADER_H,
+    x2: CELLS_X + CELLS_W, y2: VB_H - 6,
+  }));
+  svg.appendChild(headerG);
 
-    evo.nodes.forEach((node, ni) => {
-      const ny = ROW_NODES_Y + ni * (NODE_H + NODE_GAP);
-      const ng = el('g', {
-        class: 'node',
-        'data-id': node.id,
-        'data-status': node.status,
-        'data-kind': node.kind,
-        'data-next': node.next ? 'true' : 'false'
-      });
-
-      ng.appendChild(el('rect', {
-        class: 'node-rect', x, y: ny, width: COL_W, height: NODE_H
-      }));
-      ng.appendChild(el('text', {
-        class: 'node-id', x: x + 10, y: ny + 14
-      }, node.id + (node.kind === 'agent-rung' ? '  (crab)' :
-                    node.kind === 'infrastructure' ? '  (infra)' :
-                    node.kind === 'emergent' ? '  (emergent)' : '')));
-      ng.appendChild(el('text', {
-        class: 'node-label', x: x + 10, y: ny + 32
-      }, node.label));
-
-      if (node.note) {
-        const words = node.note.split(' ');
-        let line1 = '', line2 = '';
-        const MAX = Math.floor(COL_W / 5);
-        for (const w of words) {
-          if ((line1 + ' ' + w).length < MAX) line1 = line1 ? line1 + ' ' + w : w;
-          else if ((line2 + ' ' + w).length < MAX) line2 = line2 ? line2 + ' ' + w : w;
-          else { line2 += '…'; break; }
-        }
-        const noteG = el('g', { class: 'layer layer-practices' });
-        noteG.appendChild(el('text', { class: 'node-note', x: x + 10, y: ny + 50 }, line1));
-        if (line2) noteG.appendChild(el('text', { class: 'node-note', x: x + 10, y: ny + 62 }, line2));
-        ng.appendChild(noteG);
-      }
-
-      if (node.next) {
-        ng.appendChild(el('circle', {
-          class: 'next-pulse', cx: x + COL_W - 12, cy: ny + 12, r: 4
-        }));
-      }
-
-      if (node.tools && node.tools.length) {
-        const toolsG = el('g', { class: 'layer layer-tools' });
-        const chipH = 12;
-        const cy = ny + NODE_H - 10;
-        const rightEdge = x + COL_W - 4;
-        let cx = x + 8;
-        let shown = 0;
-        for (let idx = 0; idx < node.tools.length; idx++) {
-          const t = node.tools[idx];
-          const w = Math.max(24, t.length * 5 + 6);
-          const reserve = (idx < node.tools.length - 1) ? 30 : 0;
-          if (cx + w + reserve > rightEdge) break;
-          toolsG.appendChild(el('rect', {
-            class: 'tool-chip', x: cx, y: cy - chipH + 3, width: w, height: chipH, rx: 2
-          }));
-          toolsG.appendChild(el('text', {
-            class: 'tool-chip-text', x: cx + 3, y: cy + 1
-          }, t));
-          cx += w + 3;
-          shown++;
-        }
-        const remaining = node.tools.length - shown;
-        if (remaining > 0) {
-          const label = '+' + remaining;
-          const w = Math.max(24, label.length * 6 + 6);
-          toolsG.appendChild(el('rect', {
-            class: 'tool-chip', x: cx, y: cy - chipH + 3, width: w, height: chipH, rx: 2
-          }));
-          toolsG.appendChild(el('text', {
-            class: 'tool-chip-text', x: cx + 3, y: cy + 1
-          }, label));
-        }
-        ng.appendChild(toolsG);
-      }
-
-      ng.addEventListener('click', () => showDetail(node, evo));
-      g.appendChild(ng);
+  // Helper: render a single node card into parent, at the given rect.
+  function renderNode(node, evo, parent, rect) {
+    const { x, y, w, h } = rect;
+    const ng = el('g', {
+      class: 'node',
+      'data-id': node.id,
+      'data-status': node.status,
+      'data-kind': node.kind,
+      'data-next': node.next ? 'true' : 'false',
     });
 
-    const infraNode = evo.nodes.find(n => n.kind === 'infrastructure' || n.kind === 'emergent');
-    if (infraNode && infraNode.cost) {
-      const costG = el('g', { class: 'layer layer-cost' });
-      costG.appendChild(el('rect', {
-        class: 'cost-badge', x: x + 4, y: ROW_COST_Y,
-        width: COL_W - 8, height: ROW_COST_H, rx: 3
+    ng.appendChild(el('rect', {
+      class: 'node-rect', x, y, width: w, height: h
+    }));
+    const kindTag = node.kind === 'agent-rung' ? ' (crab)'
+                  : node.kind === 'infrastructure' ? ' (infra)'
+                  : node.kind === 'emergent' ? ' (emergent)' : '';
+    ng.appendChild(el('text', {
+      class: 'node-id', x: x + 6, y: y + 12
+    }, node.id + kindTag));
+    ng.appendChild(el('text', {
+      class: 'node-label', x: x + 6, y: y + 28
+    }, truncate(node.label, Math.floor(w / 6.2))));
+
+    // Practices overlay: note text inside card
+    if (node.note) {
+      const noteG = el('g', { class: 'layer layer-practices' });
+      const MAX = Math.floor(w / 4.8);
+      const words = node.note.split(' ');
+      let l1 = '', l2 = '';
+      for (const wd of words) {
+        if ((l1 + ' ' + wd).length < MAX) l1 = l1 ? l1 + ' ' + wd : wd;
+        else if ((l2 + ' ' + wd).length < MAX) l2 = l2 ? l2 + ' ' + wd : wd;
+        else { l2 = l2 + '…'; break; }
+      }
+      noteG.appendChild(el('text', { class: 'node-note', x: x + 6, y: y + 44 }, l1));
+      if (l2) noteG.appendChild(el('text', { class: 'node-note', x: x + 6, y: y + 56 }, l2));
+      ng.appendChild(noteG);
+    }
+
+    // Next marker pulse
+    if (node.next) {
+      ng.appendChild(el('circle', {
+        class: 'next-pulse', cx: x + w - 10, cy: y + 10, r: 4
       }));
+    }
+
+    // Tools overlay — bottom strip
+    if (node.tools && node.tools.length) {
+      const toolsG = el('g', { class: 'layer layer-tools' });
+      const chipH = 12;
+      const cy = y + h - 8;
+      const rightEdge = x + w - 4;
+      let cx = x + 6;
+      let shown = 0;
+      for (let idx = 0; idx < node.tools.length; idx++) {
+        const t = node.tools[idx];
+        const cw = Math.max(22, t.length * 4.8 + 6);
+        const reserve = (idx < node.tools.length - 1) ? 28 : 0;
+        if (cx + cw + reserve > rightEdge) break;
+        toolsG.appendChild(el('rect', {
+          class: 'tool-chip', x: cx, y: cy - chipH + 3, width: cw, height: chipH, rx: 2
+        }));
+        toolsG.appendChild(el('text', {
+          class: 'tool-chip-text', x: cx + 3, y: cy + 1
+        }, t));
+        cx += cw + 3;
+        shown++;
+      }
+      const remaining = node.tools.length - shown;
+      if (remaining > 0) {
+        const label = '+' + remaining;
+        const cw = Math.max(22, label.length * 6 + 6);
+        toolsG.appendChild(el('rect', {
+          class: 'tool-chip', x: cx, y: cy - chipH + 3, width: cw, height: chipH, rx: 2
+        }));
+        toolsG.appendChild(el('text', {
+          class: 'tool-chip-text', x: cx + 3, y: cy + 1
+        }, label));
+      }
+      ng.appendChild(toolsG);
+    }
+
+    ng.addEventListener('click', () => showDetail(node, evo));
+    parent.appendChild(ng);
+  }
+
+  // ─── Render each evolution as a row, bottom-up (Evo 4 at top, Evo 0 at bottom) ───
+  const orderedEvos = [...state.evos].slice().reverse();
+  orderedEvos.forEach((evo, rowIdx) => {
+    const y = ROWS_Y + rowIdx * (ROW_H + ROW_GAP);
+    const g = el('g', { class: 'evo-row', 'data-evo': evo.id });
+
+    // Row background band (spans full width).
+    g.appendChild(el('rect', {
+      class: 'evo-band', x: 4, y, width: VB_W - 8, height: ROW_H, rx: 4
+    }));
+
+    // Left gutter: evo label + question
+    g.appendChild(el('text', {
+      class: 'evo-title', x: 14, y: y + 24
+    }, 'Evo ' + evo.id));
+    g.appendChild(el('text', {
+      class: 'evo-title-sub', x: 14, y: y + 44
+    }, truncate(evo.title, 20)));
+    g.appendChild(el('text', {
+      class: 'evo-question', x: 14, y: y + 64
+    }, '"' + truncate(evo.question, 22) + '"'));
+
+    // Group nodes by their position digit.
+    const byPos = {};
+    evo.nodes.forEach(n => {
+      const p = positionOf(n.id);
+      (byPos[p] = byPos[p] || []).push(n);
+    });
+
+    // Position 0 — full-row-width card (e.g. 4.0 Murmuration)
+    if (byPos[0]) {
+      byPos[0].forEach(node => {
+        renderNode(node, evo, g, {
+          x: CELLS_X + NODE_PAD,
+          y: y + NODE_PAD,
+          w: CELLS_W - NODE_PAD * 2,
+          h: ROW_H - NODE_PAD * 2,
+        });
+      });
+    }
+
+    // Positions 1..9 — one cell per column, stack if multiple nodes at same position
+    for (let p = 1; p <= CELL_COUNT; p++) {
+      const nodesHere = byPos[p] || [];
+      if (!nodesHere.length) continue;
+      const cellX = CELLS_X + (p - 1) * CELL_W;
+      const usableH = ROW_H - NODE_PAD * 2;
+      const subH = (usableH - (nodesHere.length - 1) * 3) / nodesHere.length;
+      nodesHere.forEach((node, ni) => {
+        renderNode(node, evo, g, {
+          x: cellX + NODE_PAD,
+          y: y + NODE_PAD + ni * (subH + 3),
+          w: CELL_W - NODE_PAD * 2,
+          h: subH,
+        });
+      });
+    }
+
+    // Right gutter: metadata (cost / agent / human / activity), each overlay-toggleable
+    const rx = VB_W - RIGHT_W + 10;
+
+    // Cost
+    const infraNode = evo.nodes.find(n => (n.kind === 'infrastructure' || n.kind === 'emergent') && n.cost);
+    if (infraNode) {
+      const costG = el('g', { class: 'layer layer-cost' });
       costG.appendChild(el('text', {
-        class: 'cost-text', x: x + 10, y: ROW_COST_Y + 16
+        class: 'cost-text', x: rx, y: y + 20
       }, '◆ cost'));
       const words = infraNode.cost.split(' ');
-      const MAX = Math.floor(COL_W / 6.5);
+      const MAX = 24;
       let l1 = '', l2 = '';
-      for (const w of words) {
-        if ((l1 + ' ' + w).length < MAX) l1 = l1 ? l1 + ' ' + w : w;
-        else l2 = l2 ? l2 + ' ' + w : w;
+      for (const wd of words) {
+        if ((l1 + ' ' + wd).length < MAX) l1 = l1 ? l1 + ' ' + wd : wd;
+        else l2 = l2 ? l2 + ' ' + wd : wd;
       }
-      costG.appendChild(el('text', {
-        class: 'cost-text', x: x + 10, y: ROW_COST_Y + 30
-      }, l1));
-      if (l2) costG.appendChild(el('text', {
-        class: 'cost-text', x: x + 10, y: ROW_COST_Y + 40
-      }, l2));
+      costG.appendChild(el('text', { class: 'cost-text', x: rx, y: y + 34 }, l1));
+      if (l2) costG.appendChild(el('text', { class: 'cost-text', x: rx, y: y + 46 }, l2));
       g.appendChild(costG);
     }
 
+    // Agent rung
     const agentG = el('g', { class: 'layer layer-agents' });
     agentG.appendChild(el('text', {
-      class: 'agent-rung', x: x + 10, y: ROW_AGENT_Y + 14
-    }, '◎ ' + evo.agent));
+      class: 'agent-rung', x: rx, y: y + 70
+    }, '◎ ' + truncate(evo.agent, 30)));
     g.appendChild(agentG);
 
+    // Human type
     const humanG = el('g', { class: 'layer layer-humans' });
     humanG.appendChild(el('text', {
-      class: 'human-type', x: x + 10, y: ROW_HUMAN_Y + 14
-    }, '☺ ' + evo.human));
+      class: 'human-type', x: rx, y: y + 88
+    }, '☺ ' + truncate(evo.human, 30)));
     g.appendChild(humanG);
 
+    // Activity
     const actG = el('g', { class: 'layer layer-activity' });
     const actEntries = Object.entries(evo.activity || {});
     if (actEntries.length) {
-      let ax = x + 10;
-      for (const [k, v] of actEntries) {
-        actG.appendChild(el('text', {
-          class: 'activity-num', x: ax, y: ROW_ACT_Y + 16
-        }, String(v)));
-        actG.appendChild(el('text', {
-          class: 'activity-label', x: ax, y: ROW_ACT_Y + 28
-        }, k.replace(/_/g, ' ')));
-        ax += Math.max(50, String(v).length * 8 + 30);
-      }
-    } else {
+      const activityLine = actEntries
+        .map(([k, v]) => String(v) + ' ' + k.replace(/_/g, ' '))
+        .join(' · ');
       actG.appendChild(el('text', {
-        class: 'activity-label', x: x + 10, y: ROW_ACT_Y + 16
-      }, '—'));
+        class: 'activity-label', x: rx, y: y + 110
+      }, truncate('▮ ' + activityLine, 34)));
     }
     g.appendChild(actG);
 
