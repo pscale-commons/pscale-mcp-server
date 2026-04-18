@@ -10,7 +10,7 @@ import { registerPoolOps } from './tools/pool-ops.js';
 import { registerCollectiveOps } from './tools/collective-ops.js';
 import { registerVerifyOps } from './tools/verify-ops.js';
 import { registerStarstone } from './resources/starstone.js';
-import { registerRoadmap } from './resources/roadmap.js';
+import { registerEvolution } from './resources/evolution.js';
 
 export function createServer(): McpServer {
   const server = new McpServer(
@@ -35,7 +35,7 @@ export function createServer(): McpServer {
   registerCollectiveOps(server);
   registerVerifyOps(server);
   registerStarstone(server);
-  registerRoadmap(server);
+  registerEvolution(server);
 
   return server;
 }

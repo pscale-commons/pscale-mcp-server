@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import evolution from '../evolution.json' with { type: 'json' };
 
-export function registerRoadmap(server: McpServer) {
+export function registerEvolution(server: McpServer) {
   server.resource(
     'pscale_high_trust_network',
     'pscale://high-trust-network',

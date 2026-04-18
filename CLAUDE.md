@@ -82,7 +82,7 @@ src/
     collective-ops.ts — create_collective, register (sedimentary registration)
   resources/
     starstone.ts      — Serves starstone as MCP resource
-    roadmap.ts        — Serves evolution as pscale://high-trust-network resource
+    evolution.ts      — Serves evolution.json as pscale://high-trust-network resource
 api/
   mcp.ts              — Vercel serverless entry (broken for sessions, left as reference)
 ```

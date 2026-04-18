@@ -68,4 +68,4 @@
 
 **pscale://starstone** — Starstone v3, the complete pscale specification.
 
-**pscale://high-trust-network** — Evolution roadmap. Five levels, relational transitions, agent progression.
+**pscale://high-trust-network** — Evolution of the high-trust agent network. Five levels, relational transitions, agent progression.
