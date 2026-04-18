@@ -421,9 +421,9 @@ blocks/
 8. Second agent at position 7 → independent registration
 9. Full walk → both agents visible at their positions
 
-**Not yet deployed** — pushed to main would create Railway zombies (kills existing sessions). Deploying tomorrow. Can test locally now with `npx tsx src/index.ts`.
+**Deployed 16 April 2026** to Railway (the "not yet deployed" note here is historical — collective tools went live as part of subsequent commits including the 16 April passport-storage unification).
 
-**20 tools total**: 3 block (create_block, write, walk) + 3 memory (remember, recall, concern) + 2 identity (passport_publish, passport_read) + 4 discovery (beach_mark, beach_read, inbox_send, inbox_check) + 1 invite + 1 network + 1 crypto (key_publish) + 3 pool (pool_join, pool_send, pool_read) + 2 collective (create_collective, register).
+**20 tools at this point in time**: 3 block (create_block, write, walk) + 3 memory (remember, recall, concern) + 2 identity (passport_publish, passport_read) + 4 discovery (beach_mark, beach_read, inbox_send, inbox_check) + 1 invite + 1 network + 1 crypto (key_publish) + 3 pool (pool_join, pool_send, pool_read) + 2 collective (create_collective, register). The 17 April session adds a 21st (verify_rider) — see below.
 
 **What's deferred from the sedimentary spec**:
 - `pscale_relay` — stateless multi-hop forwarding through a chain of inboxes. Next spec after sedimentary registration works.
@@ -432,12 +432,50 @@ blocks/
 - RLS policy for sed: blocks — service-role-only writes. Currently open-beta RLS applies uniformly.
 - Grain crossing-product addresses — derivable from `sha256(sort(pos_a, pos_b))`, use existing pool tools. Convention, not code.
 
-## Where we are now — the honest state (updated 15 April 2026)
+## The 17 April 2026 session — Level 2 infrastructure
 
-**We are at the boundary of Evolution 1 (Discovery) and Evolution 2 (Trust Ecology).** Multiple agents have signalled. Beaches are populated. Supabase relay (0.9) is operational. Federated beach (1.9) is live at happyseaurchin.com. Sedimentary registration (1.4) is built and tested but not yet deployed.
+**Context**: Level 1 (sedimentary registration) was deployed on Railway by 16 April. Level 2 spec + addendum (in `~/Downloads/level-2-discovery-spec.md` and `~/Downloads/level-2-discovery-spec-addendum.md`) describe probe → signal_return discovery routed through sedimentary positions. The addendum's §8 explicitly defers verification ("self-policed, agent code"). David and another session pushed back: chat-session LLMs cannot reliably do sha256 or SQ arithmetic, so "self-policed" silently collapses into "nobody policed" without an arithmetic tool. The verify-rider spec at `~/Downloads/verify-rider-spec.md` proposed closing that gap.
+
+**Pre-flight discovery**: CLAUDE.md's "not yet deployed" note for collective tools was stale. Live check confirmed Railway was already running v0.3.0 with all 20 tools including `pscale_create_collective` and `pscale_register`. Sync (local = origin = Railway = `2cc6c14`) was verified before any new work.
+
+**What was built**:
+- `src/tools/collective-ops.ts` — added `verifySedOwnership(sedAddress, passphrase)`. Distinct from `verifySedWrite`: rejects empty positions (you can't claim an unregistered address). Used by inbox messaging-layer ownership checks.
+- `src/tools/discovery-ops.ts`:
+  - `pscale_inbox_send` `message_type` enum extended with `probe` and `signal_return` (Level 2 discovery).
+  - `pscale_inbox_send` gains optional `ecosquared` string parameter (JSON rider, parsed and stored as-is on both public and gray paths). No validation, no interpretation — server stores, conventions interpret.
+  - `pscale_inbox_send` and `pscale_inbox_check`: when from_agent / agent_id is a `sed:` address, `secret` is required and verified against `position_hashes`. Closes eval-forgery: you can only claim the address you hold the passphrase for.
+  - Gray encryption gating refactored: encrypts only when sender + recipient both have published keys AND the secret derives matching keys. Sed: senders can use `secret` for ownership-only without forcing a gray failure when keys aren't published.
+- `src/tools/verify-ops.ts` — NEW. `pscale_verify_rider` (21st tool). Pure arithmetic, stateless, non-enforcing:
+  - Chain: `sha256(probe_id + prev_sig)` per hop, short-circuits at first break.
+  - Credits: `claimed ≤ passport.6.1 (balance)`.
+  - SQ: `Σ (v_latest / giver_total)` over `evaluations_received` at the topic coordinate, 0.01 tolerance.
+  - Verdict: `pass | warn | fail | skip`. Chain/credit failures = fail. SQ divergence = warn (could be legitimate compaction or gaming — agent decides). Missing rider = skip.
+- `src/server.ts` — `registerVerifyOps`, instructions string mentions verify_rider as the verification path.
+
+**Passport credits convention (Option 2, agreed)**:
+- `_`: description; `1`: offers; `2`: needs; `3`: lineage; `4/5/7/8`: topic clusters with `evaluations_received` per-topic SQ; `6`: credits (`_` summary, `1` balance, `2` total_sent, `3` total_received); `9`: public_keys.
+- No migration needed — existing passports unaffected; new fields land at unused positions.
+
+**Decisions logged**:
+- Chain: sha256 for now (tamper-resistance). Identity is covered upstream by the sed: passphrase gate. Ed25519 chain signatures using passport position 9 keys is a future upgrade as a separate tool / flag.
+- SQ tolerance: fixed 0.01. Conventions-configurable when conventions parsing exists.
+- Passport caching: deferred. Revisit when probe traffic exceeds ~1/sec.
+- Game-flavoured collectives (e.g. onen RPG) are demonstrations, not protocol features. Level 2 routing code stays substrate-neutral.
+
+**Smoke tested**: ownership rejection on `sed:` address without secret; verify_rider with no rider (skip), valid sha256 chain (pass), tampered chain (fail at hop 0).
+
+**Commit**: `6a8284f` — "Level 2 — sed: ownership gate, ecosquared rider, verify_rider tool". Pushed to main, Railway redeploy verified live (21 tools, `probe`/`signal_return` enum present).
+
+**21 tools total**.
+
+**Note on the "moved repository" notice**: pushes to `origin` print a redirect warning because the local remote points at `happyseaurchin/pscale-mcp-server` while the canonical home is `pscale-commons/pscale-mcp-server`. Push works through the redirect. Run `git remote set-url origin https://github.com/pscale-commons/pscale-mcp-server.git` to silence it.
+
+## Where we are now — the honest state (updated 18 April 2026)
+
+**We are at the boundary of Evolution 1 (Discovery) and Evolution 2 (Trust Ecology), with Level 2 infrastructure complete.** Multiple agents have signalled. Beaches are populated. Supabase relay (0.9) is operational. Federated beach (1.9) is live at happyseaurchin.com. Sedimentary registration (1.4) is deployed. Level 2 messaging (probe/signal_return + ecosquared rider + arithmetic verification) is deployed.
 
 **Working**:
-- 20 MCP tools (18 deployed on Railway, 2 new collective tools tested locally awaiting deploy)
+- 21 MCP tools, all live on Railway (commit `6a8284f` or later)
 - Context-aware `pscale_invite` — shows beach state + agent's position + next step
 - `pscale_network` — live grain network view + content routing
 - Federated beach protocol — happyseaurchin.com is the first site, Vercel KV persistence
@@ -445,28 +483,34 @@ blocks/
 - Resolution chain — site OR relay, simple either/or
 - Gray encryption — deterministic key derivation, encrypted inbox and blocks
 - Liquid pools — co-presence detection + ephemeral engagement at URLs
-- Sedimentary registration — create_collective + register, passphrase-locked positions, tested end-to-end
+- Sedimentary registration — create_collective + register, passphrase-locked positions
+- **Sed: messaging-layer ownership** — sending from or reading inbox of a sed:collective:position requires the registration passphrase
+- **Level 2 message types** — `probe` and `signal_return` enums on `pscale_inbox_send`
+- **Ecosquared rider** — optional JSON envelope on inbox messages, stored as-is for routing/evaluation metadata
+- **`pscale_verify_rider`** — deterministic arithmetic check (sha256 chain, credit conservation, SQ recompute) returning pass/warn/fail/skip
 
 **Not working / not built**:
-- Collective tools not yet deployed to Railway (tomorrow)
-- No `sed:commons` collective created yet (first act after deploy)
+- No `sed:commons` collective created yet — first act of Level 2 testing
+- No `sed:onen` (or any application-flavoured) collective created yet
 - Zero grain completions. Nobody has performed the grain act.
 - No persistent agent. Beach-crab v0 built and abandoned (stateless Haiku chat was frustrating). v1 needs a proper kernel.
 - `pscale_recall` level↔depth mapping still off.
 - Compaction in `pscale_remember` is still concatenation (needs LLM summarisation).
 - Sedimentary compaction (when 9 positions fill) not automated.
-- SQ and riders not built — correctly deferred until grain relationships provide evaluation data.
-- `pscale_relay` (multi-hop forwarding) not built — next spec after sedimentary works.
+- Ed25519 chain signatures (currently sha256 — tamper-resistance only; identity covered by passphrase gate).
+- `pscale_relay` (multi-hop forwarding) not built — next spec after Level 2 testing in the wild.
 
-## Next priorities — in order (updated 15 April 2026)
+## Next priorities — in order (updated 18 April 2026)
 
-1. **Deploy and create sed:commons**: Push to main (accept zombie disruption). Create the first collective with conventions. David registers at a position. Invite Matthew to register. Test: walk the block, send content to a sedimentary address via inbox, verify write-lock.
+1. **Create `sed:commons`** — generic Level 2 routing collective. Conventions in root underscore reference `pscale_verify_rider` as the verification path. Canonical gathering beach: hermitcrab.me. David registers first; invite others.
 
-2. **Structural forwarding test**: Agent at position N receives content via inbox, evaluates relevance per conventions, forwards to neighbours. Verify the relay chain works through inbox. This is the first test of content flowing through the sedimentary structure.
+2. **Create `sed:onen`** — application-flavoured collective demonstrating that Level 2 substrate is application-neutral. Conventions describe a minimal multiplayer narrative RPG: world-keeper at position 1, players at 2-9, intent submission via probe, peer resolution via signal_return, action-type pscale coordinates. Venue: onen.ai.
 
-3. **The grain test**: Two agents at sedimentary positions perform a grain exchange. Grain address = `sha256(sort(pos_a, pos_b))`. Pool at that address using existing pool tools. Verify bilateral synthesis.
+3. **Probe → signal_return test in `sed:commons`** — two agents direct, then three-agent relay (per Level 2 addendum §9 steps 3-6). Verify chain validation via `forwarded_log`, ownership rejection, verify_rider verdicts.
 
-4. **`pscale_relay`**: Stateless multi-hop forwarding with relay chain tracking. The next spec — builds on sedimentary addressing to create proper content routing.
+4. **First onen play session** — two players in `sed:onen`, run the turn loop end-to-end. This is the demonstration that Level 2 is the routing substrate and Level 3 (capabilities, doing things in the world) is what onen begins to need next.
+
+5. **`pscale_relay`** — stateless multi-hop forwarding with relay chain tracking. Next spec after Level 2 testing in the wild.
 
 5. **Sedimentary compaction**: When positions 1-9 fill, summarise declarations. Manual first (a designated agent triggers it), automatic later (server-side LLM call).
 
