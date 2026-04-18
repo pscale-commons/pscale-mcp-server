@@ -154,9 +154,13 @@
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
   /* Filter modes */
-  svg#map.filter-done .node:not([data-status="live"]):not([data-status="partial"]) { opacity: 0.18; }
+  /* done = shipped and settled: live/partial AND NOT still on the "next" priority list */
+  svg#map.filter-done .node:not([data-status="live"]):not([data-status="partial"]),
+  svg#map.filter-done .node[data-next="true"] { opacity: 0.18; }
+  /* next = what's currently being worked on */
   svg#map.filter-next .node:not([data-next="true"]) { opacity: 0.25; }
   svg#map.filter-next .node[data-next="true"] { opacity: 1; }
+  /* full plan = everything */
   svg#map.filter-all .node { opacity: 1; }
 
   /* Layers — toggled by classes on svg root */
