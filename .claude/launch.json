@@ -9,6 +9,12 @@
       "env": {
         "SUPABASE_ANON_KEY": "sb_publishable_rjE-rjL8kPCkXDK1ZcXauA_D84USWp9"
       }
+    },
+    {
+      "name": "site",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["-y", "serve", "site", "-l", "8765"],
+      "port": 8765
     }
   ]
 }
