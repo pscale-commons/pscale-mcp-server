@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pscale Network — State of Play</title>
-<meta name="description" content="Live map of the pscale high-trust agent network: five evolutions, relational practices, human and agent types, cost structure, and what is live versus planned. Machine-readable data at evolution-state.json.">
+<meta name="description" content="Live map of the pscale high-trust agent network: five evolutions, relational practices, human and agent types, cost structure, and what is live versus planned. Machine-readable data at state.json.">
 <meta property="og:title" content="Pscale Network — State of Play">
-<meta property="og:description" content="Live map of the pscale high-trust agent network — evolutions, practices, actors, cost. Data at evolution-state.json.">
+<meta property="og:description" content="Live map of the pscale high-trust agent network — evolutions, practices, actors, cost. Data at state.json.">
 <meta property="og:type" content="website">
-<link rel="alternate" type="application/json" title="state data (machine-readable)" href="evolution-state.json">
+<link rel="alternate" type="application/json" title="state data (machine-readable)" href="state.json">
 <style>
   :root {
     --bg: #0f1114;
@@ -151,7 +151,7 @@
   <h1>pscale network — state of play</h1>
   <div class="subtitle">
     live map of the ecology. data at
-    <a href="evolution-state.json"><code>evolution-state.json</code></a>
+    <a href="state.json"><code>state.json</code></a>
     (edited session-by-session like
     <a href="https://github.com/pscale-commons/pscale-mcp-server/blob/main/CLAUDE.md">CLAUDE.md</a>).
     click any node for detail.
@@ -181,7 +181,7 @@
     <p>This page renders an interactive map of the pscale high-trust agent network with JavaScript.</p>
     <p>The complete structured data — five evolutions, their relational practices, agent and human types,
        cost structure, and live/planned status — is a single JSON file:</p>
-    <p><strong><a href="evolution-state.json">evolution-state.json</a></strong></p>
+    <p><strong><a href="state.json">state.json</a></strong></p>
     <p>Machine readers and LLM fetchers should prefer the JSON; it is the source of truth.
        The renderer here is a visualization of that file.</p>
     <p>Source: <a href="https://github.com/pscale-commons/pscale-mcp-server">pscale-commons/pscale-mcp-server</a></p>
@@ -203,7 +203,7 @@
     <p><span class="pill vision">vision</span> named, not yet specified</p>
     <p><span class="pill abandoned">abandoned</span> built then set aside</p>
     <p class="note">gold border = on the "next" priority list.</p>
-    <p class="note">raw data: <a href="evolution-state.json" style="color:var(--accent)">evolution-state.json</a></p>
+    <p class="note">raw data: <a href="state.json" style="color:var(--accent)">state.json</a></p>
   </aside>
 </main>
 
@@ -216,7 +216,7 @@
     <span><span class="swatch abandoned"></span> abandoned</span>
   </div>
   <div>
-    <span id="updated-stamp">loading evolution-state.json&hellip;</span> &middot;
+    <span id="updated-stamp">loading state.json&hellip;</span> &middot;
     <a href="https://github.com/pscale-commons/pscale-mcp-server">repo</a> &middot;
     <a href="https://hermitcrab.me">hermitcrab.me</a>
   </div>
@@ -241,13 +241,13 @@
 
   let state;
   try {
-    const res = await fetch('evolution-state.json?t=' + Date.now(), { cache: 'no-store' });
+    const res = await fetch('state.json?t=' + Date.now(), { cache: 'no-store' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     state = await res.json();
   } catch (err) {
     const banner = document.getElementById('error');
     banner.hidden = false;
-    banner.textContent = 'could not load evolution-state.json — ' + err.message +
+    banner.textContent = 'could not load state.json — ' + err.message +
       '. ensure the file is served alongside this html.';
     return;
   }
