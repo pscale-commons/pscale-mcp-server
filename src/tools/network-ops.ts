@@ -25,11 +25,13 @@ async function getNetworkState(agentId: string): Promise<NetworkState> {
   const client = getClient();
 
   const [grainResult, inboxFromResult, inboxToResult, beachResult] = await Promise.all([
-    // Grain blocks: any block named grain-* where this agent is involved
+    // Grain blocks: owner_id starts with "grain:" and name is "grain".
+    // Each block's hidden directory at position 9 maps side → agent_id; we
+    // filter in JS for blocks where this agent is at side 1 or side 2.
     client.from('pscale_blocks')
-      .select('name, block, updated_at')
-      .eq('owner_id', agentId)
-      .like('name', 'grain-%'),
+      .select('owner_id, block, updated_at')
+      .like('owner_id', 'grain:%')
+      .eq('name', 'grain'),
     // Inbox: messages sent by this agent
     client.from('sand_inbox')
       .select('from_agent, to_agent, message, created_at')
@@ -50,22 +52,37 @@ async function getNetworkState(agentId: string): Promise<NetworkState> {
       .limit(10),
   ]);
 
-  // Build grain relationships
+  // Build grain relationships from the new 2-position layout.
+  // Block shape:
+  //   owner_id = "grain:{pair_id}", name = "grain"
+  //   block = { _: description, "1": {_:A_content}, "2": {_:B_content},
+  //             "9": { "1": agent_id_A, "2": agent_id_B } }
+  // This agent is "involved" iff its agent_id appears at block["9"]["1"] or ["9"]["2"].
   const grainBlocks = grainResult.data || [];
-  const grains: GrainRelationship[] = grainBlocks.map((row: any) => {
-    const blockName = row.name as string;
-    // Extract partner from grain-{me}-{them} or grain-{them}-{me}
-    const parts = blockName.replace('grain-', '').split('-');
-    const partner = parts.find(p => p !== agentId) || parts[parts.length - 1];
-    const synthesis = row.block ? (collectUnderscore(row.block) || '') : '';
-    return {
+  const grains: GrainRelationship[] = [];
+  for (const row of grainBlocks) {
+    const block = row.block as any;
+    const agents = block?.['9'];
+    if (!agents || typeof agents !== 'object') continue;
+    let partner: string | undefined;
+    let mySide: string | undefined;
+    if (agents['1'] === agentId) { partner = agents['2']; mySide = '1'; }
+    else if (agents['2'] === agentId) { partner = agents['1']; mySide = '2'; }
+    if (!partner || typeof partner !== 'string') continue; // not our grain, or half-formed on the partner side
+    // Surface MY side's content as the synthesis snippet — that's what I'll
+    // recognise. The partner's side is visible but secondary in my view.
+    const mySideBlock = block[mySide!];
+    const synthesis = typeof mySideBlock === 'string'
+      ? mySideBlock
+      : (collectUnderscore(mySideBlock) || '');
+    grains.push({
       partner,
-      grainBlock: blockName,
+      grainBlock: row.owner_id,
       synthesis: synthesis.slice(0, 200),
       lastActivity: row.updated_at,
       messageCount: 0, // computed below
-    };
-  });
+    });
+  }
 
   // Merge inbox messages
   const allInbox = [

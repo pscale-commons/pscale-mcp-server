@@ -182,6 +182,41 @@ export async function getPassportBlock(agentId: string): Promise<Record<string, 
 }
 
 /**
+ * Resolve any address format to its underlying agent_id, then load that agent's passport.
+ *
+ * Handles three address forms:
+ *   - Bare agent_id (e.g. "happyseaurchin")           → getPassportBlock(addr) directly.
+ *   - Grain side  (e.g. "grain:a1b2c3d4:1")           → walk grain:{pair_id}, read the
+ *                                                        hidden directory at position 9,
+ *                                                        extract the side's agent_id, then
+ *                                                        load THAT agent's passport.
+ *   - Sed: position (e.g. "sed:commons:3")            → currently looked up as-is, preserving
+ *                                                        the existing behaviour. A dedicated
+ *                                                        sed-to-agent resolver is future work.
+ *
+ * Returns the passport block JSON, or null if resolution fails at any step.
+ * Used by verify_rider so callers can pass any address form and the arithmetic
+ * loads from the correct personal passport (credits at 6.1, SQ at topic coord).
+ */
+export async function getPassportFromAddress(addr: string): Promise<Record<string, any> | null> {
+  if (addr.startsWith('grain:')) {
+    const parts = addr.split(':');
+    if (parts.length !== 3) return null;
+    const pairId = parts[1];
+    const side = parts[2];
+    if (side !== '1' && side !== '2') return null;
+    const grainRow = await getBlock(`grain:${pairId}`, 'grain');
+    if (!grainRow) return null;
+    const agents = (grainRow.block as any)?.['9'];
+    const underlying = agents?.[side];
+    if (!underlying || typeof underlying !== 'string') return null;
+    return getPassportBlock(underlying);
+  }
+  // sed: and bare agent_ids: preserve existing direct-lookup behaviour.
+  return getPassportBlock(addr);
+}
+
+/**
  * Get an agent's published public keys from their passport block (address 9).
  * Returns { x25519, ed25519 } or null if no keys published.
  */

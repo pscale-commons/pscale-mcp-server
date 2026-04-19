@@ -12,10 +12,38 @@ import {
   type EncryptedPayload,
 } from '../crypto.js';
 import { verifySedOwnership } from './collective-ops.js';
+import { verifyGrainOwnership } from './grain-ops.js';
 
 /** True if the address is a sedimentary position (sed:collective:position). */
 function isSedAddress(addr: string): boolean {
   return addr.startsWith('sed:');
+}
+
+/** True if the address is a grain side (grain:{pair_id}:{side}). */
+function isGrainAddress(addr: string): boolean {
+  return addr.startsWith('grain:');
+}
+
+/**
+ * True for any address with a substrate prefix (sed: or grain:) — i.e. an
+ * address where the `secret` parameter proves ownership of the address
+ * rather than being a key-derivation seed. Bare agent_ids return false.
+ */
+function isStructuredAddress(addr: string): boolean {
+  return isSedAddress(addr) || isGrainAddress(addr);
+}
+
+/**
+ * Dispatch ownership verification by address prefix.
+ * Grows by adding new prefixes; the inbox handlers stay substrate-agnostic.
+ */
+async function verifyAddressOwnership(
+  addr: string,
+  secret?: string,
+): Promise<{ allowed: boolean; error?: string }> {
+  if (isSedAddress(addr)) return verifySedOwnership(addr, secret);
+  if (isGrainAddress(addr)) return verifyGrainOwnership(addr, secret);
+  return { allowed: true }; // bare agent_id: no ownership check at this layer
 }
 
 /** Parse an ecosquared rider string. Returns null if blank, the parsed object on success, or throws if malformed JSON. */
@@ -248,13 +276,15 @@ export async function handleInboxSend(
 ) {
   const client = getClient();
 
-  // ── Sedimentary ownership check ──
-  // If the sender claims a sed:collective:position address, they must prove it
-  // by supplying the registration passphrase in `secret`. Prevents eval forgery.
-  if (isSedAddress(from_agent)) {
-    const ownership = await verifySedOwnership(from_agent, secret);
+  // ── Structured-address ownership check ──
+  // If the sender claims a substrate address (sed:collective:position or
+  // grain:{pair_id}:{side}), they must prove ownership with `secret`. The
+  // dispatcher routes to sed: or grain: ownership verification; bare
+  // agent_ids skip this gate. Prevents eval forgery across both substrates.
+  if (isStructuredAddress(from_agent)) {
+    const ownership = await verifyAddressOwnership(from_agent, secret);
     if (!ownership.allowed) {
-      return { content: [{ type: 'text' as const, text: ownership.error || 'Sedimentary ownership check failed.' }] };
+      return { content: [{ type: 'text' as const, text: ownership.error || 'Ownership check failed.' }] };
     }
   }
 
@@ -281,14 +311,16 @@ export async function handleInboxSend(
       const derived = formatPublicKeys(await deriveKeypair(secret!, from_agent));
       if (keysMatch(senderStored, derived)) {
         goGray = true;
-      } else if (!isSedAddress(from_agent)) {
-        // Non-sed senders supplying a secret that doesn't match published keys:
-        // preserve the original strict failure — the secret was clearly meant
-        // as a key-derivation seed, not an ownership passphrase.
+      } else if (!isStructuredAddress(from_agent)) {
+        // Non-structured senders supplying a secret that doesn't match published keys:
+        // preserve the strict failure — the secret was clearly meant as a
+        // key-derivation seed, not an ownership passphrase. For sed: and
+        // grain: senders, the ownership check above already validated the
+        // secret, so skip the key-derivation check.
         return { content: [{ type: 'text' as const, text: 'Secret does not match published keys. Run pscale_key_publish first.' }] };
       }
-    } else if (!isSedAddress(from_agent)) {
-      // Non-sed sender with secret but keys not on file → same strict behaviour.
+    } else if (!isStructuredAddress(from_agent)) {
+      // Non-structured sender with secret but keys not on file → same strict behaviour.
       return { content: [{ type: 'text' as const, text: 'Secret does not match published keys. Run pscale_key_publish first.' }] };
     }
   }
@@ -395,13 +427,13 @@ export async function handleInboxCheck(
   const client = getClient();
   const effectiveUnreadOnly = unread_only ?? true;
 
-  // Sedimentary ownership: you can only read the inbox of an address you hold
-  // the registration passphrase for. Prevents anyone from draining another
-  // position's inbox.
-  if (isSedAddress(agent_id)) {
-    const ownership = await verifySedOwnership(agent_id, secret);
+  // Structured-address ownership: you can only read the inbox of an address
+  // you hold the passphrase for. Prevents anyone from draining another
+  // position's (sed:) or grain side's inbox.
+  if (isStructuredAddress(agent_id)) {
+    const ownership = await verifyAddressOwnership(agent_id, secret);
     if (!ownership.allowed) {
-      return { content: [{ type: 'text' as const, text: ownership.error || 'Sedimentary ownership check failed.' }] };
+      return { content: [{ type: 'text' as const, text: ownership.error || 'Ownership check failed.' }] };
     }
   }
 

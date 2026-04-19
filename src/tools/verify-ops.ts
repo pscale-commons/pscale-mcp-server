@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
-import { getPassportBlock } from '../db.js';
+import { getPassportFromAddress } from '../db.js';
 
 // ── Pure helpers ──
 
@@ -90,7 +90,7 @@ async function verifyCredits(rider: any, sender_agent_id: string) {
   if (typeof claimed !== 'number') {
     return { checked: false };
   }
-  const passport = await getPassportBlock(sender_agent_id);
+  const passport = await getPassportFromAddress(sender_agent_id);
   if (!passport) {
     return { checked: false, reason: `passport not found for ${sender_agent_id}` };
   }
@@ -120,7 +120,7 @@ async function verifySQ(rider: any, sender_agent_id: string, topic_coordinate: s
   if (!topic_coordinate || typeof claimed !== 'number') {
     return { checked: false };
   }
-  const passport = await getPassportBlock(sender_agent_id);
+  const passport = await getPassportFromAddress(sender_agent_id);
   if (!passport) {
     return { checked: false, reason: `passport not found for ${sender_agent_id}` };
   }
