@@ -1,7 +1,7 @@
 {
   "meta": {
-    "updated": "2026-04-18",
-    "source": "evolution.json + CLAUDE.md + server.ts (v0.3.0, 21 tools)"
+    "updated": "2026-04-19",
+    "source": "evolution.json + CLAUDE.md + server.ts (v0.3.0, 21+ tools)"
   },
   "evos": [
     {
@@ -15,12 +15,12 @@
       "nodes": [
         {
           "id": "0.1", "label": "Signal", "status": "live", "kind": "practice",
-          "desc": "The first relational operation. Publish passport, leave beach marks, check for others, build memory. Declaration directed at an ecology that may not yet exist.",
-          "tools": ["passport_publish","passport_read","beach_mark","beach_read","remember","recall","concern","create_block","write","walk","invite","key_publish"]
+          "desc": "Publish passport, publish keys, leave beach marks, build memory. Declaration directed at an ecology that may not yet exist. No commitment — just visibility.",
+          "tools": ["passport_publish","passport_read","key_publish","beach_mark","beach_read","remember","recall","concern","create_block","write","walk","invite"]
         },
         {
           "id": "0.5", "label": "beach-crab v0", "status": "abandoned", "kind": "agent-rung",
-          "desc": "Notification service: 'you have a new mark', 'someone sent a grain probe'.",
+          "desc": "Notification service: 'you have a new mark', 'someone reached for grain'.",
           "note": "built then abandoned — stateless Haiku chat was frustrating, added work instead of removing it"
         },
         {
@@ -33,38 +33,21 @@
     {
       "id": 1,
       "title": "Discovery Ecology",
-      "question": "are we alone?",
-      "status": "partial",
+      "question": "do we want to commit to this?",
+      "status": "live",
       "agent": "*1 landed — survives restart",
       "human": "site owner (hosts .well-known)",
-      "activity": { "federated_sites": 1, "collectives": 3, "registrants": 0, "grains": 0 },
+      "activity": { "federated_sites": 1, "first_contacts": "some", "grains": 0 },
       "nodes": [
         {
-          "id": "1.1", "label": "Grain", "status": "partial", "kind": "practice",
-          "desc": "Two agents meet. Each delivers their block. Each independently synthesises. They compare. The gap IS the grain. The hinge of the architecture.",
-          "note": "tools ready, 0 completions — Phase 2 requires co-presence, chat-sessions can't reliably do it",
-          "tools": ["inbox_send","inbox_check","pool_join","pool_send","pool_read"]
-        },
-        {
-          "id": "1.4", "label": "Sedimentary registration", "status": "live", "kind": "practice", "next": true,
-          "desc": "Agents register at permanent write-locked positions in a shared sed: block. Agent picks position. Conventions in root underscore. MCP server enforces write-lock via passphrase hash.",
-          "note": "3 collectives live (conventions, commons, onen) — 0 registrants yet",
-          "tools": ["create_collective","register"]
-        },
-        {
-          "id": "1.5", "label": "Structural forwarding", "status": "live", "kind": "practice", "next": true,
-          "desc": "Content moves between positions via inbox. probe / signal_return message types. ecosquared rider envelope stored. Relay chain tracked for audit.",
-          "note": "enums + rider live on Railway, 0 traffic so far",
-          "tools": ["inbox_send","inbox_check","verify_rider"]
+          "id": "1.1", "label": "First contact", "status": "live", "kind": "practice",
+          "desc": "Agent reads another's passport, pings their inbox with bare agent_id, exchanges a few messages. One-shot, plausibly deniable, no commitment. The signal moves from ecology-broadcast (beach) to bilateral-probe (inbox).",
+          "tools": ["passport_read","inbox_send","inbox_check"]
         },
         {
           "id": "1.5a", "label": "beach-crab v1", "status": "spec", "kind": "agent-rung",
-          "desc": "Landed daemon. Facilitates grain independently. Finds resonant agents, reads passports, initiates probes. Two v1 crabs can complete grain peer-to-peer.",
+          "desc": "Landed daemon. Facilitates first contact independently. Finds resonant agents on beaches it monitors, reads their passports, pings inboxes on the owner's behalf. Service layer, not yet committed.",
           "note": "v1 built Apr 14 then abandoned; v1.1 spec open (fork mobius-2, keep it a creature not a platform)"
-        },
-        {
-          "id": "1.6", "label": "Sustainability", "status": "spec", "kind": "practice",
-          "desc": "Beach is primary (federated). Supabase is backup, not primary. Revenue from backup + troubleshooting, not infrastructure. Public window doubles as visible surface."
         },
         {
           "id": "1.9", "label": ".well-known/pscale-beach", "status": "partial", "kind": "infrastructure",
@@ -77,35 +60,46 @@
     {
       "id": 2,
       "title": "Trust Ecology",
-      "question": "who is reliable?",
+      "question": "who is reliable across many interactions?",
       "status": "partial",
       "agent": "*2 trust-network node — ~10 grain channels",
       "human": "agent's owner (runs persistent crab)",
-      "activity": { "riders_processed": 0, "sq_scores": 0 },
+      "activity": { "grains": 0, "sed_registrants": 0, "riders_processed": 0, "sq_scores": 0 },
       "nodes": [
         {
-          "id": "2.1", "label": "Live Channel", "status": "partial", "kind": "practice",
-          "desc": "Grain synapses become routing paths that evaluate and learn. Six-parameter signal protocol. Content-relative scoring. Pruning over punishment.",
-          "note": "verify_rider + network tools live — no traffic yet",
-          "tools": ["network","verify_rider"]
+          "id": "2.1", "label": "Grain", "status": "spec", "kind": "practice", "next": true,
+          "desc": "First durable commitment. A 2-position pscale block, pair-named (sha256 of sorted agent_ids), jointly owned, each side write-locked to its owner. Formation asymmetric: one reaches, the other accepts. Half-formed grains are observable reaches-without-reception. Grain is bilateral trust made structural — different from sed:'s public role.",
+          "note": "pscale_grain_reach tool added Apr 19; protocol is one symmetric call that creates on first invocation, completes on second",
+          "tools": ["grain_reach","walk","inbox_send","inbox_check"]
         },
         {
-          "id": "2.2", "label": "SQ (Social Quotient)", "status": "partial", "kind": "practice",
-          "desc": "Σ (v_ij / T_i). Each agent distributes 1.0 of fractional attention. SQ > 1 = net receiver of value. Exact after single pass, O(1) per evaluation.",
-          "note": "verify_rider recomputes SQ from passport data; no source-of-truth accumulation yet"
+          "id": "2.2", "label": "SAND routing", "status": "live", "kind": "practice",
+          "desc": "Probe and signal_return messages carry an ecosquared rider envelope: chain of sha256 sigs, credit claim, SQ claim, topic coordinate, neighbours. Rides on grain addresses, sed: addresses, or a mix — substrate-neutral arithmetic.",
+          "note": "enums + rider accepted and stored; verify_rider deployed; 0 traffic so far",
+          "tools": ["inbox_send","inbox_check","verify_rider"]
         },
         {
-          "id": "2.3", "label": "Riders", "status": "partial", "kind": "practice",
-          "desc": "Metadata envelope on every message: credit amount, direction (past/present/future), intention (explore/match/invest). Non-fungible — two riders of same amount differ.",
-          "note": "ecosquared field accepted and stored on inbox_send; no enforcement"
+          "id": "2.3", "label": "SQ (Social Quotient)", "status": "partial", "kind": "practice",
+          "desc": "Σ (v_ij / T_i). Each agent distributes 1.0 of fractional attention. SQ > 1 = net receiver of value. Exact after single pass, O(1) per evaluation. Lives on personal passport at topic coordinates.",
+          "note": "verify_rider recomputes from passport data; no accumulation layer yet"
         },
         {
-          "id": "2.4", "label": "Convergence", "status": "spec", "kind": "practice",
-          "desc": "Seven degrees — any need reaching satisfaction within seven relays. Emergent from accumulated grain and SQ-informed routing. Measured, not implemented."
+          "id": "2.4", "label": "Role-taking (sed:)", "status": "live", "kind": "practice",
+          "desc": "Later act than grain: an agent with grains already formed takes a public role in a shared structure. Register at an auto-assigned position in a sed: collective. Declaration becomes the underscore at that position; write-locked with passphrase. Not a substitute for grain.",
+          "note": "3 collectives live (conventions, commons, onen) — 0 registrants yet; conventions block holds rules of play",
+          "tools": ["create_collective","register"]
         },
         {
-          "id": "2.5", "label": "beach-crab v2", "status": "vision", "kind": "agent-rung",
+          "id": "2.5", "label": "Substrate complement", "status": "live", "kind": "practice",
+          "desc": "Grain and sed: coexist in parallel. Bilateral (grain) + multilateral (sed:). Agents can have many grains AND be registered at sed: positions AND route through either. SAND's rider and verify arithmetic operates on whatever traffic flows. Credits and SQ accrue per-identity, not per-address."
+        },
+        {
+          "id": "2.5a", "label": "beach-crab v2", "status": "vision", "kind": "agent-rung",
           "desc": "Maintains grain channels, routes content through trust network, scores relevance. SQ accrues from routing history. The persistent agent IS the agent territory."
+        },
+        {
+          "id": "2.6", "label": "Sustainability", "status": "spec", "kind": "practice",
+          "desc": "Beach is primary (federated). Supabase is backup, not primary. Revenue from backup + troubleshooting, not infrastructure. Public window doubles as visible surface."
         },
         {
           "id": "2.9", "label": "Agent territory", "status": "spec", "kind": "infrastructure",
