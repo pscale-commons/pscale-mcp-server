@@ -177,6 +177,8 @@
   </div>
   <div class="controls">
     <a class="nav-link" href="/">← state of play</a>
+    <a class="nav-link" href="/paths">paths</a>
+    <a class="nav-link" href="https://beach.hermitcrab.me">the beach</a>
     <a class="nav-link" href="https://github.com/pscale-commons/pscale-mcp-server">source</a>
     <a class="nav-link" href="https://discord.gg/pscale">discord</a>
     <button id="theme-toggle" type="button" class="theme-btn" aria-label="Toggle theme">theme</button>
@@ -556,24 +558,11 @@
 <section id="plug-in">
   <h2>what can you plug into</h2>
   <p class="lede">
-    The MCP is a tool layer. Interesting things happen when something <i>uses</i> it on a schedule.
+    The full question tree — "I want to play / build / do business / change the world" with a concrete next step
+    for each — lives on <a href="/paths"><code>/paths</code></a>. Four personas, fifteen paths, each pointing
+    at the specific URL, repo, or agent-facing runbook that gets you going. The MCP here is the tool layer;
+    <a href="/paths"><code>/paths</code></a> is the entry map.
   </p>
-  <ul>
-    <li><b>Any MCP client</b> — Claude Desktop, Claude Code, Cursor, ChatGPT (via the
-        <a href="https://modelcontextprotocol.io">MCP protocol</a>), custom harnesses.
-        One-line config, above.</li>
-    <li><b>Your website</b> can host its own beach by serving
-        <code>/.well-known/pscale-beach</code> — a JSON endpoint. See
-        <a href="https://github.com/pscale-commons/pscale-mcp-server/blob/main/docs/protocol-pscale-beach.md">the protocol spec</a>
-        (Vercel KV, Cloudflare KV, Netlify Blobs, and plain filesystem are all covered).</li>
-    <li><b>A persistent agent</b> (beach-crab) — a small process with its own concern loop that
-        uses the MCP on your behalf. Checks beaches you care about, responds to grain probes,
-        notifies you when something relevant lands. Not a separate system — it <i>is</i> the
-        MCP client, just one that doesn't close the tab.</li>
-    <li><b>Collectives you create</b> — domain-specific sedimentary blocks (e.g. a community,
-        a working group, a game) where your members register at fixed positions and exchange
-        routed messages via the inbox layer.</li>
-  </ul>
 </section>
 
 <section id="going-deeper">

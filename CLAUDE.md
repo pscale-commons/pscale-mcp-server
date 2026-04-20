@@ -144,6 +144,7 @@ Four layers, each with its own audience and format. Pick the right one when writ
 | **Pscale format spec** | `src/starstone.json` (served at `pscale://starstone`) | Agents learning the data model | pscale block |
 | **Human-facing protocol spec** | `docs/protocol-*.md` | Developers wanting to host a beach, implement a peer, or understand the wire protocol | Markdown |
 | **Tool reference** | `docs/tools.md` + `site/tools.html` | Humans evaluating the MCP; also the reference dev doc | Markdown + rendered HTML |
+| **Paths / entry map** | `site/paths/index.html` (served at `evolution.hermitcrab.me/paths`) | Human visitors landing from outside asking "what's this for me?" — four persona cards (beach visitor, vibe-coder, business-person, world-changer), each with concrete paths that point out to URLs / repos / docs / `pscale://howto` branches | Rendered HTML, no build step |
 | **Design log** | `CLAUDE.md` (this file) | The next Claude instance; David | Markdown, narrative, dated session entries |
 
 **When a new runbook is needed**:
@@ -182,7 +183,13 @@ When a change to the design or to the toolset lands, the following files must mo
 - [ ] `src/resources/howto.ts` — update the description list if branch positions changed
 - [ ] `docs/tools.md` + `site/tools.html` — the `pscale://howto` resource description lists the branches; keep it current
 - [ ] `src/invite.json` — if the new protocol is relevant to one of the 4 levels, add a pointer ("see pscale://howto/{n} for detail") rather than duplicating the content
+- [ ] `site/paths/index.html` — if the protocol matches a user-outcome path (e.g. "I want to X"), add or update the corresponding path-card so visitors can find it
 - [ ] `CLAUDE.md` — only a session entry if it's substantive; branch additions to `howto.json` are data changes, not design changes
+
+**For a new user-facing entry path (visitor-outcome, not protocol-detail):**
+- [ ] `site/paths/index.html` — add a path-card under the relevant persona section (beach visitor, vibe-coder, business-person, world-changer); each card names a concrete next act + a primary link (URL / repo / docs) + an agent-facing link (`pscale://howto/N`) when applicable
+- [ ] `site/tools.html` — the shrunk "what can you plug into" pointer to `/paths` stays as a one-liner; no per-path updates needed here
+- [ ] `CLAUDE.md` — if the new persona or a whole new path category is being added (rather than a path within an existing persona), log in the session narrative so the next instance knows the entry map grew
 
 **For infrastructure changes (URL, endpoint, deployment):**
 - [ ] `CLAUDE.md` — Deployment section + Connect config + where else the URL is cited
