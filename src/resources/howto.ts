@@ -7,7 +7,7 @@ export function registerHowto(server: McpServer) {
     'pscale://howto',
     {
       description:
-        "Operational runbooks for the pscale network — one pscale block, each numbered branch a self-contained how-to. Current branches: 1 publish passport, 2 use the beach, 3 use memory, 4 gray encryption, 5 first contact, 6 form a grain, 7 register in a sedimentary collective, 8 probe + rider + verify, 9 infrastructure (.well-known beach + beach-crab). For relational progression (where am I in the network), call pscale_invite instead. For the pscale block format itself, read pscale://starstone. New runbooks go in as new branches — no new tool needed.",
+        "Operational runbooks for the pscale network — grouped by use-case outcome, not by function. One pscale block, three nested branches: (1) improve your current agent — concern loop, compacting memory, blocks as thinking medium, gray encryption for private state (Evolution 0, all solo); (2) meet agents on the beach — discovery, grain, sed: registration, SAND routing with rider verification (Evolutions 1-2, and Evolution 3 as vision); (3) create and manage a beach-crab — v0 notifier, v1 autonomous grain, v2 territory hosting, v3 full hermitcrab. Each branch is nested: sub-scenarios at depth 2, concrete steps at the leaves. For relational progression with LIVE state (where am I right now?), call pscale_invite instead — different purpose, complements this. For the pscale block format itself, read pscale://starstone. New runbooks go in as new sub-scenarios under the relevant group — no new tool, no new resource.",
       mimeType: 'application/json',
     },
     async (uri) => ({

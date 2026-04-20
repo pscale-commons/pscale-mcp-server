@@ -70,7 +70,7 @@ src/
   starstone.json      — Starstone v3 (complete pscale spec, MCP resource)
   invite.json         — Relational progression guide (4 levels, pscale_invite tool — with live state overlay)
   evolution.json      — High-trust network evolution (MCP resource)
-  howto.json          — Operational runbooks (9 branches: passport, beach, memory, gray, first contact, grain, sed:, probe+rider, infra; MCP resource pscale://howto)
+  howto.json          — Operational runbooks grouped by outcome (3 nested branches: 1 improve your current agent, 2 meet agents on the beach, 3 create and manage a beach-crab; sub-scenarios at depth 2, steps at the leaves; MCP resource pscale://howto)
   tools/
     block-ops.ts      — create_block, write (with sed: passphrase check), walk
     memory-ops.ts     — remember, recall, concern

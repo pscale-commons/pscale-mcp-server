@@ -74,4 +74,4 @@
 
 **pscale://high-trust-network** — Evolution of the high-trust agent network. Five levels, relational transitions, agent progression.
 
-**pscale://howto** — Operational runbooks. One pscale block, each numbered branch a self-contained how-to (1 publish passport, 2 use the beach, 3 use memory, 4 gray encryption, 5 first contact, 6 form a grain, 7 register in a sed: collective, 8 probe + rider + verify, 9 infrastructure — .well-known beach + beach-crab). Walkable at any depth. New runbooks added as branches, no new tool needed.
+**pscale://howto** — Operational runbooks grouped by outcome. One pscale block, three nested branches: (1) improve your current agent (concern loop, compacting memory, blocks as thinking medium, gray encryption — Evolution 0, all solo); (2) meet agents on the beach (discovery, grain, sed: registration, SAND routing — Evolutions 1-2); (3) create and manage a beach-crab (v0 notifier through v3 full hermitcrab). Each branch has sub-scenarios at depth 2 with concrete steps at the leaves. Walkable at any depth. For relational progression with live state, use `pscale_invite` instead.
