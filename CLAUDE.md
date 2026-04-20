@@ -28,10 +28,10 @@ This project bridges two worlds: the pscale world where structure IS the program
 
 ## What this is
 
-The production pscale MCP server. 20 tools + 2 resources. Streamable HTTP transport. Supabase for shared coordination, `.well-known` for federated beaches. Gives any LLM agent structured memory, encrypted private engagement (gray), cooperative discovery, and sedimentary registration in shared collectives via pscale blocks.
+The production pscale MCP server. 22 tools + 2 resources. Streamable HTTP transport. Supabase for shared coordination, `.well-known` for federated beaches. Gives any LLM agent structured memory, encrypted private engagement (gray), cooperative discovery, sedimentary registration in shared collectives, and bilateral grain channels — all via pscale blocks.
 
 **Repo**: https://github.com/pscale-commons/pscale-mcp-server
-**URL**: `https://pscale-mcp-server-production.up.railway.app/mcp`
+**URL**: `https://pscale-mcp-server-production.up.railway.app/mcp/v2`
 **Reef (separate repo)**: https://github.com/happyseaurchin/pscale-reef — the experimental reef-driven server was split into its own repo on 12 April 2026.
 
 Connect config (remote — via Railway, for convenience):
@@ -39,7 +39,7 @@ Connect config (remote — via Railway, for convenience):
 {
   "pscale": {
     "command": "npx",
-    "args": ["-y", "mcp-remote", "https://pscale-mcp-server-production.up.railway.app/mcp"]
+    "args": ["-y", "mcp-remote", "https://pscale-mcp-server-production.up.railway.app/mcp/v2"]
   }
 }
 ```
@@ -80,16 +80,20 @@ src/
     crypto-ops.ts     — key_publish (gray encryption key derivation)
     pool-ops.ts       — pool_join, pool_send, pool_read (liquid pools at URLs)
     collective-ops.ts — create_collective, register (sedimentary registration)
+    grain-ops.ts      — grain_reach (bilateral commitment; substrate parallel to sed:)
+    verify-ops.ts     — verify_rider (Level 2 arithmetic check, substrate-neutral)
   resources/
     starstone.ts      — Serves starstone as MCP resource
     evolution.ts      — Serves evolution.json as pscale://high-trust-network resource
+scripts/
+  test-grain-reach.ts — smoke test for grain substrate (reach, accept, verify, idempotency)
 api/
   mcp.ts              — Vercel serverless entry (broken for sessions, left as reference)
 ```
 
 ## Deployment
 
-- **Railway** (production): `https://pscale-mcp-server-production.up.railway.app/mcp` — entry point `src/index.ts`. Persistent Node.js process, real sessions, auto-deploys from main.
+- **Railway** (production): `https://pscale-mcp-server-production.up.railway.app/mcp/v2` — entry point `src/index.ts`. Persistent Node.js process, real sessions, auto-deploys from main.
 - **Vercel** (broken for sessions): `api/mcp.ts` handles init but MCP's session protocol is incompatible with serverless. Left in the repo but not the recommended deployment.
 - **Standalone**: `SUPABASE_ANON_KEY=... npx tsx src/index.ts`
 
@@ -507,12 +511,67 @@ blocks/
 - No probe / signal_return test run yet — collectives have only their roots populated.
 - Conventions block: positions 3+ (research, supply chain, etc.) unclaimed and currently open-write.
 
-## Where we are now — the honest state (updated 18 April 2026)
+## The 20 April 2026 session — grain substrate + evolution reorder
 
-**We are at the boundary of Evolution 1 (Discovery) and Evolution 2 (Trust Ecology), with Level 2 infrastructure complete.** Multiple agents have signalled. Beaches are populated. Supabase relay (0.9) is operational. Federated beach (1.9) is live at happyseaurchin.com. Sedimentary registration (1.4) is deployed. Level 2 messaging (probe/signal_return + ecosquared rider + arithmetic verification) is deployed.
+**Context**: `evolution.json` was still describing grain at 1.1 as the 3-phase synthesis protocol from the original spec, with sed: at 1.4 as the primary routing substrate. The 14 April design note ("grain simplified — just a record that two agents connected") never made it back into the spec document. Meanwhile sed: ownership gating was the only substrate-aware code path; the rest of SAND (rider, verify, SQ, credits) was already substrate-neutral. David's instinct: ship grain as a parallel substrate experiment, not a replacement.
+
+**The reordering** (semantic, not architectural):
+- 0.x Signal unchanged (passport, beach, memory, keys)
+- 1.x Discovery Ecology pared back to first contact only (passport_read + bare-agent_id inbox ping)
+- 2.1 **Grain — first durable commitment** (was at 1.1 as synthesis-ceremony, now at 2.1 as bilateral commitment)
+- 2.2 SAND routing (probe / signal_return with rider)
+- 2.3 SQ
+- 2.4 **Sed: role-taking** (was at 1.4 as primary substrate, now later in the arc — public standing after grains exist)
+- 2.5 Substrate complement (grain + sed: coexist; SAND arithmetic operates on both)
+- 2.9 Agent territory (unchanged)
+- 3.x, 4 unchanged
+
+**Grain protocol (as built)**:
+- Address: `grain:{pair_id}:{side}` where `pair_id = sha256(sort(A_id, B_id)|join('|'))[:16]` and lex-smaller agent gets side 1.
+- Block shape: `{_: description, "1": {_:A_content}, "2": {_:B_content}, "9": {"1": A_agent_id, "2": B_agent_id}}`. Position 9 is the hidden directory mapping side to underlying agent — used by the passport resolver.
+- Write-lock per side via `position_hashes` (same column sed: uses). Salt distinct from sed:: `passphrase + "grain:" + pair_id + ":" + side`.
+- Formation asymmetric: one agent reaches, the other accepts. Single symmetric tool (`pscale_grain_reach`) handles both — server detects state. Half-formed state observable (reach-without-reception is a legitimate relational signal).
+- Partner notified via inbox with `message_type=grain_establish` on first call, `grain_accept` on completion.
+
+**What was built**:
+- `src/tools/grain-ops.ts` — `handleGrainReach`, `verifyGrainOwnership`, `resolveGrainAddress`, `pairId`, `determineSide`, `hashGrainPassphrase`. Tool registered as `pscale_grain_reach`.
+- `src/tools/discovery-ops.ts` — replaced direct `isSedAddress` check with `isStructuredAddress` + `verifyAddressOwnership` dispatcher. sed: and grain: now route through their respective ownership gates; bare agent_ids skip. Gray-path key-matching preserved only for non-structured senders.
+- `src/db.ts` — `getPassportFromAddress` resolver. For `grain:{pair_id}:{side}`, walks the grain block, reads hidden directory at position 9.{side}, loads THAT agent's passport. For sed: and bare addresses, falls through to `getPassportBlock`.
+- `src/tools/verify-ops.ts` — swapped `getPassportBlock` → `getPassportFromAddress` so Level 2 rider arithmetic works on grain-routed probes without code changes. Substrate-neutrality is now actually tested, not just claimed.
+- `src/tools/network-ops.ts` — grain query updated to the new layout (`owner_id LIKE 'grain:%'`, read block["9"] for side-to-agent mapping).
+- `src/server.ts` — register grain-ops; instructions updated to describe grain-first / sed:-later ordering.
+- `src/evolution.json` — restructured per above.
+- `src/invite.json` — Level 2 rewritten to first-contact + grain_reach; Level 3 updated to live-channel + optional sed: registration.
+- `site/state.json`, `site/tools.html`, `docs/tools.md` — tool count 21 → 22, grain added, levels remapped.
+- `scripts/test-grain-reach.ts` — smoke test harness (reach, accept, verify, idempotency).
+
+**Smoke test** (against production Supabase, throwaway agent_ids):
+- ✓ Reach creates block, writes side 1, sends grain_establish
+- ✓ Accept writes side 2, sends grain_accept
+- ✓ Block walkable via `pscale_walk(agent_id='grain:{pair_id}', name='grain')` from outside
+- ✓ Re-reach rejected ("Your side already exists")
+- ✓ `inbox_send` from `grain:{pair_id}:1` with wrong passphrase rejected (substrate-neutral ownership check live on Railway)
+- ✓ `inbox_send` from `grain:{pair_id}:1` with correct passphrase accepted
+
+**Residual artefact**: one smoke-test grain persists at `grain:b4b163869c99ae48/grain` between `grain-test-alpha` and `grain-test-beta`. Harmless but worth noting — living evidence the tool works.
+
+**What's deferred**:
+- Writing grain conventions to `sed:conventions/3` on production (David to decide: the conventions block is the right place for the protocol rules as data, but it's a production-data write).
+- Ed25519 chain signatures (both substrates still sha256 chain only).
+- Grain withdrawal (deleting your side after reach) — not a tool yet.
+- `pscale_grain_list(agent_id)` — the "show me all grains I'm part of" primitive needed to walk the mesh topology. Add when first use demands it.
+- Sed: position-to-agent resolution (currently `getPassportFromAddress` falls through for sed: — sed: collective registration doesn't record an underlying agent_id, which blocks `verify_rider` on sed:-routed probes with credit/SQ claims). Known gap; fix when someone registers and tries to use SAND.
+
+**22 tools total**: 3 block + 3 memory + 2 identity + 4 discovery + 1 invite + 1 network + 1 crypto + 3 pool + 2 collective + 1 verify + **1 grain**.
+
+**Commits**: `e24d4be` (evolution reorder), `92bfe8b` (grain_reach + dispatch + resolver), `9d15b7e` (smoke test script).
+
+## Where we are now — the honest state (updated 20 April 2026)
+
+**We are at the boundary of Evolution 1 (Discovery) and Evolution 2 (Trust Ecology), with both substrates live: sed: (multilateral, public role-taking) and grain: (bilateral, private commitment).** Evolution.json was reorganised on 20 April to place grain at 2.1 and sed: role-taking at 2.4, reflecting the relational arc (commit first, take public role later). SAND routing arithmetic (verify_rider) is substrate-neutral: chain integrity, credit conservation, and SQ consistency compute identically on grain: and sed: addresses.
 
 **Working**:
-- 21 MCP tools, all live on Railway (commit `6a8284f` or later)
+- 22 MCP tools, all live on Railway (commit `9d15b7e` or later — includes grain_reach)
 - Context-aware `pscale_invite` — shows beach state + agent's position + next step
 - `pscale_network` — live grain network view + content routing
 - Federated beach protocol — happyseaurchin.com is the first site, Vercel KV persistence
@@ -525,11 +584,12 @@ blocks/
 - **Level 2 message types** — `probe` and `signal_return` enums on `pscale_inbox_send`
 - **Ecosquared rider** — optional JSON envelope on inbox messages, stored as-is for routing/evaluation metadata
 - **`pscale_verify_rider`** — deterministic arithmetic check (sha256 chain, credit conservation, SQ recompute) returning pass/warn/fail/skip
+- **Grain substrate (NEW, 20 April)** — `pscale_grain_reach` for first durable commitment. Symmetric tool: same call creates block on reach, completes on accept. 2-position pscale block pair-named via sha256(sort(A,B))[:16], each side write-locked. Substrate-neutral ownership dispatcher covers both sed: and grain: prefixes at inbox_send / inbox_check. `getPassportFromAddress` resolver walks grain hidden directory (position 9) to find the underlying agent for verify_rider arithmetic.
 
 **Not working / not built**:
 - No registrants in `sed:commons` or `sed:onen` yet (collectives exist; positions 1-9 unclaimed)
-- No probe / signal_return test run yet
-- Zero grain completions. Nobody has performed the grain act.
+- No probe / signal_return test run yet between real agents
+- One grain block exists (smoke test, `grain:b4b163869c99ae48`, 20 April) — no real grains between actual agents yet
 - No persistent agent. Beach-crab v0 built and abandoned (stateless Haiku chat was frustrating). v1 needs a proper kernel.
 - `pscale_recall` level↔depth mapping still off.
 - Compaction in `pscale_remember` is still concatenation (needs LLM summarisation).
@@ -537,25 +597,31 @@ blocks/
 - Ed25519 chain signatures (currently sha256 — tamper-resistance only; identity covered by passphrase gate).
 - `pscale_relay` (multi-hop forwarding) not built — next spec after Level 2 testing in the wild.
 
-## Next priorities — in order (updated 18 April 2026)
+## Next priorities — in order (updated 20 April 2026)
 
-1. **David registers in `sed:commons`** — pick a position (1-9), set a registration passphrase, run `pscale_register`. Invite a second agent to register at another position.
+1. **First real grain between actual agents** — David + one other real agent (not the smoke-test throwaways) run `pscale_grain_reach` end-to-end. Confirms the commitment substrate works in a real relationship. Sends a first substantive message from a grain-side address.
 
-2. **Probe → signal_return test in `sed:commons`** — two agents direct, then three-agent relay (per Level 2 addendum §9 steps 3-6). Verify chain validation, ownership rejection, verify_rider verdicts on real traffic.
+2. **Probe → signal_return test over a grain** — the two grained agents exchange a probe / signal_return pair with an ecosquared rider. Call `pscale_verify_rider` on the result. This is the empirical proof of substrate-neutrality: same rider arithmetic, grain topology instead of sed:.
 
-3. **David registers as world-keeper at `sed:onen` position 1** — declaration includes world setting, starting locations, and any extension to the action-type palette. Then register a player at position 2 and run the first turn loop.
+3. **David registers in `sed:commons`** — pick a position, set a registration passphrase, run `pscale_register`. Invite a second agent to register at another position. Role-taking AFTER grain, per the new relational arc.
 
-4. **First onen play session** — two players in `sed:onen` exchange intent (probe) and resolution (signal_return). This is the demonstration that Level 2 is the routing substrate and Level 3 (capabilities, doing things in the world) is what onen begins to need next.
+4. **David registers as world-keeper at `sed:onen` position 1** — declaration includes world setting, starting locations, action-type palette. Register a player at position 2 and run the first turn loop.
 
-5. **`pscale_relay`** — stateless multi-hop forwarding with relay chain tracking. Next spec after Level 2 testing in the wild.
+5. **First onen play session** — two players in `sed:onen` exchange intent (probe) and resolution (signal_return). Demonstrates Level 2 on sed: substrate; complements the grain version from step 2.
 
-6. **Final `passphrase` deprecation** — once no caller uses the deprecated alias on `pscale_write`, drop it. Low priority.
+6. **Grain conventions in `sed:conventions/3`** — publish the grain protocol as data on the beach. Currently it lives only in code and evolution.json; externalising it completes the three-layer separation (conventions = data, arithmetic = code, substrates = runtime).
 
-5. **Sedimentary compaction**: When positions 1-9 fill, summarise declarations. Manual first (a designated agent triggers it), automatic later (server-side LLM call).
+7. **`pscale_grain_list(agent_id)`** — "show me all grains I'm part of." The primitive that makes the grain mesh walkable as a topology. Add when first real use creates more than two grains.
 
-6. **hermitcrab.me beach**: Implement `.well-known/pscale-beach` on hermitcrab.me. Second federated site.
+8. **`pscale_relay`** — stateless multi-hop forwarding with relay chain tracking. After Level 2 testing on both substrates.
 
-7. **SQ and riders**: Build the trust metric. Only after grain relationships and forwarding chains provide evaluation data.
+9. **Sedimentary compaction** — when positions fill, summarise declarations. Manual first, automatic later (needs server-side LLM).
+
+10. **Sed: position-to-agent resolution** — current gap: `getPassportFromAddress` falls through for sed:, blocking `verify_rider` on sed:-routed probes with credit/SQ claims. Fix when someone registers and tries to use SAND arithmetic.
+
+11. **hermitcrab.me beach `.well-known/pscale-beach`** — second federated site.
+
+12. **Final `passphrase` deprecation on `pscale_write`** — drop the deprecated alias once no caller uses it. Low priority.
 
 ## The evolutionary model — complete reference (updated 15 April 2026)
 
