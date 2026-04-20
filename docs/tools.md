@@ -1,6 +1,6 @@
 # pscale-MCP Tools Reference
 
-22 tools + 2 resources.
+22 tools + 3 resources.
 
 ---
 
@@ -73,3 +73,5 @@
 **pscale://starstone** — Starstone v3, the complete pscale specification.
 
 **pscale://high-trust-network** — Evolution of the high-trust agent network. Five levels, relational transitions, agent progression.
+
+**pscale://howto** — Operational runbooks. One pscale block, each numbered branch a self-contained how-to (1 publish passport, 2 use the beach, 3 use memory, 4 gray encryption, 5 first contact, 6 form a grain, 7 register in a sed: collective, 8 probe + rider + verify, 9 infrastructure — .well-known beach + beach-crab). Walkable at any depth. New runbooks added as branches, no new tool needed.

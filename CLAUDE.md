@@ -28,7 +28,7 @@ This project bridges two worlds: the pscale world where structure IS the program
 
 ## What this is
 
-The production pscale MCP server. 22 tools + 2 resources. Streamable HTTP transport. Supabase for shared coordination, `.well-known` for federated beaches. Gives any LLM agent structured memory, encrypted private engagement (gray), cooperative discovery, sedimentary registration in shared collectives, and bilateral grain channels — all via pscale blocks.
+The production pscale MCP server. 22 tools + 3 resources. Streamable HTTP transport. Supabase for shared coordination, `.well-known` for federated beaches. Gives any LLM agent structured memory, encrypted private engagement (gray), cooperative discovery, sedimentary registration in shared collectives, and bilateral grain channels — all via pscale blocks. Agent-facing runbooks live as walkable blocks at `pscale://howto`.
 
 **Repo**: https://github.com/pscale-commons/pscale-mcp-server
 **URL**: `https://pscale-mcp-server-production.up.railway.app/mcp/v2`
@@ -68,8 +68,9 @@ src/
   server.ts           — MCP server factory, tool registration
   index.ts            — Entry point (DO NOT MODIFY casually)
   starstone.json      — Starstone v3 (complete pscale spec, MCP resource)
-  invite.json         — Relational progression guide (4 levels, MCP tool)
+  invite.json         — Relational progression guide (4 levels, pscale_invite tool — with live state overlay)
   evolution.json      — High-trust network evolution (MCP resource)
+  howto.json          — Operational runbooks (9 branches: passport, beach, memory, gray, first contact, grain, sed:, probe+rider, infra; MCP resource pscale://howto)
   tools/
     block-ops.ts      — create_block, write (with sed: passphrase check), walk
     memory-ops.ts     — remember, recall, concern
@@ -85,6 +86,7 @@ src/
   resources/
     starstone.ts      — Serves starstone as MCP resource
     evolution.ts      — Serves evolution.json as pscale://high-trust-network resource
+    howto.ts          — Serves howto.json as pscale://howto resource
 scripts/
   test-grain-reach.ts — smoke test for grain substrate (reach, accept, verify, idempotency)
 api/
@@ -137,14 +139,22 @@ Four layers, each with its own audience and format. Pick the right one when writ
 | Layer | Location | Audience | Format |
 |-------|----------|----------|--------|
 | **Conceptual map** | `src/evolution.json` (served as `pscale://high-trust-network`) + `site/index.html` (dashboard) | Agents + humans orienting to the whole model | pscale block + rendered dashboard |
-| **Agent-facing runbook** | `src/invite.json` (served by `pscale_invite` tool) | LLM agents executing relational acts | pscale block (4 levels, decimal steps, tool names + parameters in each step) |
+| **Relational arc** (map, with live context) | `src/invite.json` (served by `pscale_invite` tool — adds live state overlay) | LLM agents asking "where am I and what's next?" | pscale block (4 levels, decimal steps) |
+| **Operational runbooks** (detail, static) | `src/howto.json` (served at `pscale://howto` resource) | LLM agents asking "how do I do X?" | pscale block (9 branches, one per protocol, walkable at any depth) |
+| **Pscale format spec** | `src/starstone.json` (served at `pscale://starstone`) | Agents learning the data model | pscale block |
 | **Human-facing protocol spec** | `docs/protocol-*.md` | Developers wanting to host a beach, implement a peer, or understand the wire protocol | Markdown |
 | **Tool reference** | `docs/tools.md` + `site/tools.html` | Humans evaluating the MCP; also the reference dev doc | Markdown + rendered HTML |
 | **Design log** | `CLAUDE.md` (this file) | The next Claude instance; David | Markdown, narrative, dated session entries |
 
-**When a new runbook is needed**: if it's for an AGENT (e.g. "how to form a grain"), extend `invite.json` or add a new pscale block served as an MCP resource (convention: `pscale://howto/{topic}`). If it's for a HUMAN DEVELOPER (e.g. "how to host `.well-known/pscale-beach` on Cloudflare"), add `docs/protocol-{topic}.md` or `docs/howto-{topic}.md`.
+**When a new runbook is needed**:
+- **Agent-facing, detailed how-to** (e.g. "how to run a probe", "how to set up beach-crab"): add a new branch to `src/howto.json`. That's the whole change — no new tool, no new resource file. If the howto block grows past 9 branches, pscale compaction kicks in (oldest nine fold into the parent underscore); that's a future problem.
+- **Agent-facing, where-am-I orientation** (relational progression): extend `src/invite.json` at the right decimal level — this is the one place that overlays live state.
+- **Human-facing**, developer protocol spec or ops guide: add `docs/protocol-{topic}.md` or `docs/howto-{topic}.md`. Reference from `pscale://howto` if agents might also want to know about it (e.g. howto 9 points at `docs/protocol-pscale-beach.md`).
 
-**Runbooks built into pscale-mcp**: yes for agent-facing. `pscale_invite` IS the runbook — each decimal step includes the tool name to call and the parameters to pass. Extending it is the primary way to teach agents new protocols. The starstone (`pscale://starstone`) teaches the data model itself.
+**Runbooks built into pscale-mcp**: yes for agent-facing, in two shapes:
+- `pscale_invite` for the relational arc with context overlay (the MAP).
+- `pscale://howto` resource for protocol detail, one branch per topic (the MANUAL).
+- `pscale://starstone` teaches the data model itself.
 
 ## Keeping docs in sync — checklist for substantive changes
 
@@ -162,9 +172,17 @@ When a change to the design or to the toolset lands, the following files must mo
 **For a semantic reorganisation (like grain moving from 1.1 to 2.1):**
 - [ ] `src/evolution.json` — the spec (primary source of truth)
 - [ ] `src/invite.json` — the operational 4-level guide (mirrors the spec)
+- [ ] `src/howto.json` — if the reorg changes how a specific protocol works, update its branch
 - [ ] `site/state.json` — status markers remapped to new IDs
 - [ ] `site/tools.html` — levels table descriptions
 - [ ] `CLAUDE.md` — session entry describing the reorg + updated "Where we are now" + updated "Next priorities"
+
+**For a new protocol / how-to (no code, just documentation):**
+- [ ] `src/howto.json` — add a new branch (underscore = what + when to use; digits 1-9 = sequential steps with tool names and parameters)
+- [ ] `src/resources/howto.ts` — update the description list if branch positions changed
+- [ ] `docs/tools.md` + `site/tools.html` — the `pscale://howto` resource description lists the branches; keep it current
+- [ ] `src/invite.json` — if the new protocol is relevant to one of the 4 levels, add a pointer ("see pscale://howto/{n} for detail") rather than duplicating the content
+- [ ] `CLAUDE.md` — only a session entry if it's substantive; branch additions to `howto.json` are data changes, not design changes
 
 **For infrastructure changes (URL, endpoint, deployment):**
 - [ ] `CLAUDE.md` — Deployment section + Connect config + where else the URL is cited
