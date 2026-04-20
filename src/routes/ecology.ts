@@ -52,12 +52,17 @@ export async function handleEcologyPulse(_req: IncomingMessage, res: ServerRespo
       inbox24h,
       collectives,
     ] = await Promise.all([
-      // passports = blocks named 'passport' owned by real agents (not sed: collectives)
-      countRows('pscale_blocks', (q: any) => q.eq('name', 'passport').not('owner_id', 'like', 'sed:%')),
+      // passports = blocks named 'passport' owned by real agents — exclude
+      // substrate owners (sed: collectives and grain: pair blocks don't have
+      // passports of their own; credits/SQ live on the underlying agent).
+      countRows('pscale_blocks', (q: any) =>
+        q.eq('name', 'passport').not('owner_id', 'like', 'sed:%').not('owner_id', 'like', 'grain:%'),
+      ),
       countRows('beach_marks'),
       countRows('beach_marks', (q: any) => q.gte('created_at', dayAgo)),
-      // grain blocks: name like 'grain-%'
-      countRows('pscale_blocks', (q: any) => q.like('name', 'grain-%')),
+      // grain blocks: new substrate format — owner_id='grain:{pair_id}', name='grain'.
+      // One row per formed grain (pair of agents).
+      countRows('pscale_blocks', (q: any) => q.like('owner_id', 'grain:%').eq('name', 'grain')),
       countRows('sand_inbox', (q: any) => q.gte('created_at', dayAgo)),
       // sed: collectives — blocks owned by sed:* addresses. This over-counts:
       // both the collective itself and registrant position writes share the
@@ -89,12 +94,14 @@ export async function handleEcologyAgents(_req: IncomingMessage, res: ServerResp
     const client = getClient();
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    // Pull passport blocks for all non-sed agents in one query.
+    // Pull passport blocks for real agents — exclude substrate owners
+    // (sed: collectives, grain: pair blocks).
     const { data: passports, error: passError } = await client
       .from('pscale_blocks')
       .select('owner_id, block, updated_at, created_at')
       .eq('name', 'passport')
       .not('owner_id', 'like', 'sed:%')
+      .not('owner_id', 'like', 'grain:%')
       .order('updated_at', { ascending: false });
     if (passError) throw passError;
 

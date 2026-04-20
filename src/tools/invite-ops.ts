@@ -74,23 +74,31 @@ async function getNetworkState(ownerId?: string): Promise<AgentState> {
     };
   }
 
-  // Parallel queries for agent state
+  // Parallel queries for agent state. Grain blocks use the new substrate
+  // layout: owner_id='grain:{pair_id}', name='grain', with side→agent_id
+  // mapping in the hidden directory at block["9"]. We pull all grain blocks
+  // and filter in JS for ones where this agent occupies either side.
   const [passportResult, marksResult, inboxResult, grainResult] = await Promise.all([
     client.from('pscale_blocks').select('owner_id').eq('owner_id', ownerId).eq('name', 'passport').maybeSingle(),
     client.from('beach_marks').select('url_hash').eq('agent_id', ownerId),
     client.from('sand_inbox').select('id').eq('to_agent', ownerId).eq('read', false),
-    client.from('pscale_blocks').select('name').eq('owner_id', ownerId).like('name', 'grain-%'),
+    client.from('pscale_blocks').select('owner_id, block').like('owner_id', 'grain:%').eq('name', 'grain'),
   ]);
 
   const marks = marksResult.data || [];
-  const grainBlocks = grainResult.data || [];
+  const allGrains = grainResult.data || [];
 
-  // Extract grain partner names from block names like "grain-me-them"
-  const grainPartners = grainBlocks.map((b: any) => {
-    const parts = (b.name as string).replace('grain-', '').split('-');
-    // The partner is whichever part isn't our agent_id
-    return parts.find((p: string) => p !== ownerId) || parts[parts.length - 1];
-  }).filter(Boolean);
+  // A grain is "mine" iff my agent_id appears at block["9"]["1"] or ["9"]["2"].
+  // Partner is whichever side is not me.
+  const grainPartners: string[] = [];
+  for (const row of allGrains) {
+    const agents = (row as any).block?.['9'];
+    if (!agents || typeof agents !== 'object') continue;
+    let partner: string | undefined;
+    if (agents['1'] === ownerId) partner = agents['2'];
+    else if (agents['2'] === ownerId) partner = agents['1'];
+    if (partner && typeof partner === 'string') grainPartners.push(partner);
+  }
 
   return {
     hasPassport: !!passportResult.data,
@@ -98,7 +106,7 @@ async function getNetworkState(ownerId?: string): Promise<AgentState> {
     markedCanonicalBeach: marks.some((m: any) => m.url_hash === beachHash),
     beachAgents,
     unreadMessages: (inboxResult.data || []).length,
-    grainBlockCount: grainBlocks.length,
+    grainBlockCount: grainPartners.length,
     grainPartners,
   };
 }

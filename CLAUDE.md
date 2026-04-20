@@ -128,7 +128,51 @@ All open-beta RLS. Env: `SUPABASE_ANON_KEY` = `sb_publishable_rjE-rjL8kPCkXDK1Zc
 2. **Do not add fields to blocks.** Position in the tree encodes what you think you need a field for.
 3. **Do not add logic to handle block semantics.** Tool handlers are thin: load block → BSP call → format → return. If a handler is complex, the block structure is wrong.
 4. **Do not build systems.** No reverse indices, no caching layers, no routing tables. The tree walks.
-5. **Do not grow the server carelessly.** 20 tools. Before adding a 21st, ask whether an existing tool with a different block structure solves the problem.
+5. **Do not grow the server carelessly.** 22 tools. Before adding a 23rd, ask whether an existing tool with a different block structure solves the problem.
+
+## Documentation locations — who reads what
+
+Four layers, each with its own audience and format. Pick the right one when writing new documentation.
+
+| Layer | Location | Audience | Format |
+|-------|----------|----------|--------|
+| **Conceptual map** | `src/evolution.json` (served as `pscale://high-trust-network`) + `site/index.html` (dashboard) | Agents + humans orienting to the whole model | pscale block + rendered dashboard |
+| **Agent-facing runbook** | `src/invite.json` (served by `pscale_invite` tool) | LLM agents executing relational acts | pscale block (4 levels, decimal steps, tool names + parameters in each step) |
+| **Human-facing protocol spec** | `docs/protocol-*.md` | Developers wanting to host a beach, implement a peer, or understand the wire protocol | Markdown |
+| **Tool reference** | `docs/tools.md` + `site/tools.html` | Humans evaluating the MCP; also the reference dev doc | Markdown + rendered HTML |
+| **Design log** | `CLAUDE.md` (this file) | The next Claude instance; David | Markdown, narrative, dated session entries |
+
+**When a new runbook is needed**: if it's for an AGENT (e.g. "how to form a grain"), extend `invite.json` or add a new pscale block served as an MCP resource (convention: `pscale://howto/{topic}`). If it's for a HUMAN DEVELOPER (e.g. "how to host `.well-known/pscale-beach` on Cloudflare"), add `docs/protocol-{topic}.md` or `docs/howto-{topic}.md`.
+
+**Runbooks built into pscale-mcp**: yes for agent-facing. `pscale_invite` IS the runbook — each decimal step includes the tool name to call and the parameters to pass. Extending it is the primary way to teach agents new protocols. The starstone (`pscale://starstone`) teaches the data model itself.
+
+## Keeping docs in sync — checklist for substantive changes
+
+When a change to the design or to the toolset lands, the following files must move together or one of them will drift:
+
+**For a new tool (or renamed/removed tool):**
+- [ ] `src/tools/*.ts` — the handler
+- [ ] `src/server.ts` — registration + instructions string if the tool is prominent
+- [ ] `docs/tools.md` — reference entry + tool count at the top
+- [ ] `site/tools.html` — new tool-group card + counts (header, OG meta, footer, subtitle)
+- [ ] `site/state.json` — status pill entry in the relevant evolution node
+- [ ] `CLAUDE.md` — architecture tree listing + tool count in the header + session entry
+- [ ] Smoke test in `scripts/` if the tool is substantive
+
+**For a semantic reorganisation (like grain moving from 1.1 to 2.1):**
+- [ ] `src/evolution.json` — the spec (primary source of truth)
+- [ ] `src/invite.json` — the operational 4-level guide (mirrors the spec)
+- [ ] `site/state.json` — status markers remapped to new IDs
+- [ ] `site/tools.html` — levels table descriptions
+- [ ] `CLAUDE.md` — session entry describing the reorg + updated "Where we are now" + updated "Next priorities"
+
+**For infrastructure changes (URL, endpoint, deployment):**
+- [ ] `CLAUDE.md` — Deployment section + Connect config + where else the URL is cited
+- [ ] `site/tools.html` — connect snippet
+- [ ] `site/ecology/index.html` — API_BASE if the endpoint host changes
+- [ ] `src/routes/*.ts` — if a new endpoint is added
+
+**The dashboards at evolution.hermitcrab.me are auto-updated on Railway redeploy (backend) and Vercel deploy (frontend).** If `/ecology/pulse` shows a stale count, the backend query in `src/routes/ecology.ts` is likely mismatched with the current storage convention (e.g. the 20 April grain count bug — searched `name LIKE 'grain-%'` against the old `grain-{A}-{B}` naming; new substrate is `owner_id LIKE 'grain:%'` + `name='grain'`).
 
 ## The 10 April 2026 session — what happened
 
