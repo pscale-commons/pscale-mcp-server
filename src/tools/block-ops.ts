@@ -217,7 +217,7 @@ export function registerBlockOps(server: McpServer) {
 
   server.tool(
     'pscale_walk',
-    `Navigate a pscale block. This is the only navigation tool you need. Six modes:
+    `Navigate a pscale BLOCK stored in the pscale_blocks table (keyed by agent_id + name). NOT for MCP resources — pscale://starstone, pscale://high-trust-network, and pscale://howto are resources, fetched via the MCP resources/read capability, NOT this tool. Calling pscale_walk with name='howto' returns "not found" because no such block exists; use resources/read at URI pscale://howto instead, then navigate the returned JSON by position. Six modes for actual blocks:
 
 - 'spindle' (default): walk from root to address, collecting text at every level — broad to specific context
 - 'ring': see siblings at the same level as your address
