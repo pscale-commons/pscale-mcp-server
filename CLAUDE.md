@@ -180,6 +180,7 @@ When a change to the design or to the toolset lands, the following files must mo
 
 **For a new protocol / how-to (no code, just documentation):**
 - [ ] `src/howto.json` — add a new branch (underscore = what + when to use; digits 1-9 = sequential steps with tool names and parameters)
+- [ ] **Re-run `scripts/import-howto-as-block.ts`** — mirrors the JSON into the `pscale-howto/howto` pscale_blocks row so claude.ai (which doesn't expose `resources/read`) can walk the runbook via `pscale_walk`. Without this, edits to howto.json are only visible to MCP clients that surface resources (Desktop, Cursor). Run: `SUPABASE_ANON_KEY=... npx tsx scripts/import-howto-as-block.ts`.
 - [ ] `src/resources/howto.ts` — update the description list if branch positions changed
 - [ ] `docs/tools.md` + `site/tools.html` — the `pscale://howto` resource description lists the branches; keep it current
 - [ ] `src/invite.json` — if the new protocol is relevant to one of the 4 levels, add a pointer ("see pscale://howto/{n} for detail") rather than duplicating the content
