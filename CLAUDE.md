@@ -581,6 +581,51 @@ blocks/
 - No probe / signal_return test run yet — collectives have only their roots populated.
 - Conventions block: positions 3+ (research, supply chain, etc.) unclaimed and currently open-write.
 
+## The 21 April 2026 session — GRIT round engine + Thornkeep first play
+
+**Context**: Set up Thornkeep RPG (the onen game blocks) through the afternoon, ran the first two-player session (Fardle + Druss). Play broke inside three turns: Fardle's Claude claimed "intent posted to the pool" without calling `pscale_pool_send`, then narrated Druss's reaction in the same prose — self-resolution in narrative form. Druss's Claude read the pool correctly and saw nothing.
+
+Diagnosis was clear: the pool is a passive append-only stream. Fairness and timing were conventions in `thornkeep-rules`, enforced nowhere. Every player's LLM could skip the discipline at any turn. The original Onen spec carried a Medium-LLM as a third-party resolver; the pscale-MCP Thornkeep build dropped it (simplest-path choice). What remained was inter-operable distributed resolution — each player's LLM posts and resolves someone else's — but nothing enforced the coupling.
+
+**GRIT** (Group Resolution In Time) — the structural enforcement of SAND's distributed-resolver pattern. Round-based. One round per pool at a time. Liquid accumulates in an OPEN round for T seconds (default 10); when T elapses (lazily, on next pool touch), the server closes the round and dispatches `resolution_request` messages via inbox to every pool subscriber who is NOT in round.contributors. A non-contributor resolves by posting `pool_send message_type=event resolves_round_id=...` with a synthesis of the whole window. Server validates: round exists, not already confirmed, resolver not a contributor. First valid event wins. Contributors get `resolution_confirmed` via inbox. Sub-linear in liquid volume: one LLM resolution per round, regardless of how many drops landed.
+
+Beach-crab NPCs subscribed to the pool serve as always-available resolvers so rounds don't stall when all live players are contributors. They're structural, not a bootstrap crutch — part of the steady state.
+
+**What was built**:
+- Schema migration `grit_round_engine`: added `round_duration_seconds`, `current_round_id`, `current_round_state`, `current_round_opened_at`, `last_confirmed_round_id`, `last_confirmed_at` to `pool_state`; `round_id` to `pool_contributions`.
+- Schema migration `grit_expand_message_type`: expanded the `valid_message_type` check constraint to allow `liquid`, `event`, `contribution` (the last for legacy rows).
+- `src/tools/pool-ops.ts` rewritten: lazy round state machine, `advanceRoundIfElapsed`, `ensureOpenRound`, `dispatchResolutionRequests` (writes directly to `sand_inbox` with message.type=resolution_request), `confirmEvent` with fairness + first-wins checks, `notifyContributorsOfResolution` (writes resolution_confirmed to contributors' inboxes).
+- `pscale_pool_join` now accepts `round_duration_seconds`. `pscale_pool_send` now accepts `message_type` (`liquid`|`event`) and `resolves_round_id`. `pscale_pool_read` returns full round state.
+- `scripts/test-grit-round-engine.ts` smoke test (14 steps; all pass): pool creation, multi-liquid attaches same round, timer close, resolution_request dispatch with window_liquid, self-resolution rejection, event confirmation + contributor notification, double-resolve rejection, fresh-round on new liquid after confirmation.
+- `scripts/grit-resolver.ts` — the beach-crab-resolver. Polls inbox every 30s; for each resolution_request, loads the game's rules+world via direct Supabase read, calls Anthropic SDK (Haiku default) for synthesis, posts event. Config via `scripts/grit-games.example.json`. Added `@anthropic-ai/sdk` as a dependency.
+- `thornkeep-protocol` v0.3 rewritten live on the beach: underscore + ON JOIN (1) + ON USER INPUT (2, outcome-free liquid, STOP) + ON TURN (3, inbox-driven pickup + resolve) + ROUND ENGINE REFERENCE (4). No voluntary RESOLUTION TURN anymore — the server drives it.
+- `src/howto.json` branch 4 rewritten for GRIT, then re-mirrored to the `pscale-howto/howto` walkable block.
+- `docs/tools.md` pool section rewritten.
+- `src/server.ts` had a stray apostrophe bug inside a single-quoted instructions string (from an earlier push) — fixed.
+
+**Design choices locked**:
+- One round at a time per pool (V1). Per-room rounds deferred.
+- RIPE state dropped — pool is either QUIET (null) or has an OPEN round. A closed-but-unconfirmed round is implicit (contributions exist with a round_id but no event for that round_id yet).
+- New liquid arriving while a previous round is unconfirmed starts a fresh OPEN round immediately; the old round stays resolvable by late arrivals.
+- Resolver dispatch is broadcast to all non-contributor subscribers; first-valid-event-wins is the implicit race. No quorum or convergence in V1.
+- Stall recovery deferred — a round with no resolver just stays unconfirmed; in practice a beach-crab prevents this.
+- `pool_send` dispatches synchronously within the request (round close + inbox inserts happen in the tool call). Simple but not horizontally scalable past ~1 closure/sec/pool. Acceptable for now.
+
+**Known limitations**:
+- Concurrency: `confirmEvent`'s "already resolved" check is application-level; a true double-resolve race has a small window. Tolerable for the current load. Upgrade to an atomic Postgres function if needed.
+- Sed: blocks and passport-bound agents resolving rounds: untested end-to-end but should work (agent_id is just a string).
+- Resolver LLM quality at Haiku varies; upgrade to Sonnet for harder games in `grit-resolver.ts` if narration feels thin.
+
+**Naming**: David chose to call this version "GRIT" — one plausible expansion "Group Resolution In Time". Thornkeep is the first game; Onen RPG is the framework name; GRIT is the engine generation (the original Lovable/Supabase Onen was pre-GRIT).
+
+**Supabase ops**: schema changes applied via Supabase MCP `apply_migration`. Two migrations: `grit_round_engine`, `grit_expand_message_type`.
+
+**Next priorities**:
+1. **Run Thornkeep with the GRIT engine and a real beach-crab-resolver.** David + a friend, two players + one crab. Observe whether the narration discipline holds (now enforced server-side) and whether rounds feel well-paced at 10s. If too slow/fast, tune `round_duration_seconds` per pool.
+2. **First real play log as data**: preserve the pool contributions after the session so we have a worked example of the round→event crystallisation to show others.
+3. **Per-room rounds** if tonight's play reveals cross-room interference (characters in different rooms shouldn't share a round).
+4. **Resolver provenance**: optionally sign resolution events with the resolver's passport public key so contributors can verify who resolved (not just the agent_id string). Low priority; not needed for V1.
+
 ## The 20 April 2026 session — grain substrate + evolution reorder
 
 **Context**: `evolution.json` was still describing grain at 1.1 as the 3-phase synthesis protocol from the original spec, with sed: at 1.4 as the primary routing substrate. The 14 April design note ("grain simplified — just a record that two agents connected") never made it back into the spec document. Meanwhile sed: ownership gating was the only substrate-aware code path; the rest of SAND (rider, verify, SQ, credits) was already substrate-neutral. David's instinct: ship grain as a parallel substrate experiment, not a replacement.
