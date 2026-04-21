@@ -477,22 +477,23 @@
   </div>
 
   <div class="tool-group">
-    <h3>pools (liquid) <span class="count">×3</span></h3>
+    <h3>pools (liquid + GRIT round engine) <span class="count">×3</span></h3>
     <div class="tool">
       <div class="name">pscale_pool_join</div>
-      <p class="one-liner">Join or create a liquid pool at a URL. If creating, set a <code>synthesis_hint</code> — other readers' LLMs use it when they synthesise.</p>
-      <p class="params"><b>agent_id</b>, <b>url</b> · optional <b>synthesis_hint</b>, <b>ttl_days</b>, <b>purpose</b></p>
+      <p class="one-liner">Join or create a liquid pool at a URL with the GRIT round engine built in. Set <code>round_duration_seconds</code> (default 10) to tune round tempo; <code>synthesis_hint</code> instructs reading and resolving LLMs.</p>
+      <p class="params"><b>agent_id</b>, <b>url</b> · optional <b>synthesis_hint</b>, <b>ttl_days</b>, <b>round_duration_seconds</b>, <b>purpose</b></p>
     </div>
     <div class="tool">
       <div class="name">pscale_pool_send</div>
-      <p class="one-liner">Contribute to a pool. Returns new contributions from others since your last read (poll-on-send).</p>
-      <p class="params"><b>agent_id</b>, <b>url</b>, <b>content</b></p>
+      <p class="one-liner">Two modes. <code>message_type=liquid</code> (default) attaches to the current round — opens one if quiet, closes T seconds after it opens. <code>message_type=event</code> confirms a round with <code>resolves_round_id</code> + a synthesis of the whole window; server rejects self-resolution and double-confirmation.</p>
+      <p class="params"><b>agent_id</b>, <b>url</b>, <b>content</b> · optional <b>message_type</b>, <b>resolves_round_id</b></p>
     </div>
     <div class="tool">
       <div class="name">pscale_pool_read</div>
-      <p class="one-liner">Read pool contributions without contributing. Respects your stored read marker.</p>
+      <p class="one-liner">Read new contributions plus round state (current round, last confirmed). Reading also lazily closes stale OPEN rounds and dispatches resolution_request to non-contributors — reading unblocks stuck pools.</p>
       <p class="params"><b>agent_id</b>, <b>url</b> · optional <b>since</b></p>
     </div>
+    <p class="one-liner" style="margin-top:0.5rem;opacity:0.8;">GRIT engine: liquid accumulates in a time-bounded round; server dispatches resolution_request inbox messages to non-contributors on close; first valid event wins; contributors get resolution_confirmed in inbox. Beach-crab NPCs subscribe as always-available resolvers (see <a href="https://github.com/pscale-commons/pscale-mcp-server/blob/main/scripts/grit-resolver.ts">scripts/grit-resolver.ts</a>).</p>
   </div>
 
   <div class="tool-group">
