@@ -29,7 +29,7 @@ Each character has a gray-encrypted memory block. ON JOIN creates it on-demand (
 New pool message type `observation`. When a player's LLM narrates an OBSERVATION (look, listen, who's here), after narrating it also posts `pool_send message_type=observation content=<structured JSON>` with room + detail. Observations don't attach to rounds (no round_id, no round engine semantics); they're a typed stream on the same pool.
 
 **What this needs:**
-- Supabase DDL: expand `valid_message_type` constraint to include `observation`. Add `last_compression_at TIMESTAMPTZ` to `pool_state`.
+- ~~Supabase DDL: expand `valid_message_type` constraint to include `observation`. Add `last_compression_at TIMESTAMPTZ` to `pool_state`.~~ **APPLIED 23 April via CLI** (`supabase/migrations/20260423201814_grit_observations_layer.sql`). DDL is live on remote; local repo now tracks migrations under `supabase/migrations/`.
 - `pool-ops.ts`: handle `message_type=observation` (simple passthrough insert, no round logic).
 - Protocol v0.5: extend ON USER INPUT → OBSERVATION with post-narration observation posting (after narrating, structure the invented canonical detail and post_send it).
 - Signed writes so impostors can't pollute the observation stream with false canon under another character's name.
@@ -80,6 +80,7 @@ Lighter for the player. Requires substrate extension.
 
 ## Pre-session prep
 
-- Reauth Supabase MCP (session expired during the days off) — `SUPABASE_ACCESS_TOKEN` env or `--access-token` flag on the MCP config.
+- **Skip Supabase MCP; use the CLI.** `supabase link --project-ref piqxyfmzzywxzqkzmpmm` is already done (23 April). For new DDL: `supabase migration new <name>` → edit the SQL file → `supabase db push --linked`. If the local migrations directory disagrees with remote history, `supabase migration repair --status reverted <versions>` to reconcile before pushing. Supabase MCP auth is flaky across sessions; CLI is the reliable path.
 - Read the nacl signing primitives already used by `crypto-ops.ts` and `pscale_key_publish` — the Ed25519 key is already derived and published; only the verify path is missing.
 - Review the v0.4 protocol: ON JOIN (now v0.4.1 with robust memory handling), ON USER INPUT, ON TURN. The v0.5 changes are additions to ON USER INPUT, not rewrites.
+- `supabase/migrations/` directory now tracks all future DDL. The 13 pre-existing migrations were marked `reverted` in the repair step so local tracking starts fresh from 23 April; they remain applied on remote.
