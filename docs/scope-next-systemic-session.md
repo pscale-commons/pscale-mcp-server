@@ -60,6 +60,84 @@ Lighter for the player. Requires substrate extension.
 
 **Recommendation:** build B in the next session as part of the systemic jump. Keep A as a note for paranoid players who want lock-down before B ships.
 
+## Pre-coding design decisions (resolved 23 April)
+
+Four decisions that sharpen the scope from "roughly systemic" to "genuinely systemic". Each is load-bearing. Build session should re-read this section before touching code.
+
+### D1. Observation shape — PSCALE, not flat category-JSON
+
+**Observations are pscale blocks**, not `{"room": "2", "detail": "..."}`-style category records. The CLAUDE.md warning — "position encodes relationships; depth IS the meaning; don't add category layers the tree already provides" — applies here directly. Observations are first-class pscale data.
+
+**Convention for an observation's pscale shape** (serialised as JSON into the pool contribution's `message`):
+
+```
+{
+  "_":  "natural-language summary of what was observed",
+  "1":  "thornkeep-world@2",                            // target: address in affected block
+  "2":  {                                                // content to integrate (pscale sub-tree)
+    "_":  "subject summary (e.g. 'Ennick, hawker selling salted cod')",
+    "1":  "first attribute",
+    "2":  "second attribute",
+    ...
+  }
+}
+```
+
+Position 1 is the target reference (block + pscale address). Position 2 is itself a pscale sub-tree (underscore + positions). The compressor walks the target, places `2` at the next free position under that room (or as a nested addendum; depends on shape). World stays pscale-shaped.
+
+**Where observations live structurally:** also worth considering — a per-character `observations` block (`thornkeep-{name}/observations`) that accumulates observations as sub-positions over time. The pool contribution then carries a pointer (star-ref) to the latest observation position on that block, not the full content. Keeps the pool light and makes observations first-class per-character data. This is the cleaner shape long-term; V0.5 can ship with either shape (content-in-pool or pointer-in-pool), decide at build time based on compressor simplicity.
+
+**Rule of thumb for all future substrate decisions:** if you find yourself writing `{key: value}` where `key` is a category label ("type", "room", "detail"), stop. Pscale encodes category through POSITION. The tree already knows.
+
+### D2. World compressor — AUTHORS write to world
+
+The compressor is the process that integrates observations into world blocks. **Only authors have write rights to the world.** Authors are a distinct role from characters — a player can be both, but the write paths are different.
+
+**Authority model:**
+- Author identity lives in a sed: collective (see D3): `sed:{game}-authors`.
+- Compressor invocation is author-authenticated: the running compressor signs writes to `thornkeep-world` with the author's Ed25519 key (derived from their passphrase via `pscale_key_publish`, verified server-side against the author's passport position 9).
+- Any author can run the compressor. Any author's write is valid. Multiple authors = multiple compression passes possible; they should coordinate out-of-band or the compressor should be atomic per room.
+
+**Infrastructure:**
+- Compressor runs as a script (`onen/scripts/world-compressor.ts` once the onen/ directory exists, or `scripts/` for now). Manual invocation at first; cron / paid-tier crab later.
+- Reads observations from pool since `last_compression_at`, groups by target address, one LLM call per target room integrating observations into current description, signed write, updates `last_compression_at`.
+
+### D3. Per-role seds, ONE passphrase per player
+
+**Four per-role sed: collectives** — one per mode:
+- `sed:{game}-cast` for characters (players)
+- `sed:{game}-authors` for authors
+- `sed:{game}-designers` for designers
+- `sed:{game}-directors` for directors
+
+A single person registers only in the seds their roles require. Default new player tomorrow: registers only in `sed:thornkeep-cast`. One passphrase, one sed, one position, done.
+
+**One passphrase per player, not per role.** A player who's both character and author uses the SAME passphrase across both sed registrations. Convention, not technically enforced — but protocol v0.5 should default to reusing and not ask for a separate passphrase.
+
+**Backward compat for existing characters (Druss, Fardle):**
+- They already have `pscale_key_publish`'d keys from this session. Their passphrase works as-is.
+- On first resume after v0.5, protocol detects "passport exists, no cast registration" → asks "Register as cast member? (y/n; same passphrase)". If yes, calls `pscale_register` in `sed:thornkeep-cast`. Character's canonical write-identity becomes `sed:thornkeep-cast:N`; display name stays `thornkeep-{name}`.
+- After registration, all pool sends use `from_agent=sed:thornkeep-cast:N secret={passphrase}` — server-enforced write-lock. Impersonation blocked.
+
+**New players (tomorrow):**
+- ON JOIN asks for character name + passphrase (as v0.4.1).
+- Protocol additionally calls `pscale_register collective=thornkeep-cast declaration={one-liner} passphrase={passphrase}` — single step, same passphrase.
+- From then on, all writes go through `sed:thornkeep-cast:N` with the passphrase. Player never sees the sed: mechanics; just plays.
+
+### D4. Self-test PASS criteria
+
+End-to-end smoke test after v0.5 lands. Order:
+
+1. Druss (registered in `sed:thornkeep-cast`) observes at Market Square: "a hawker named Ennick sells salted cod from the Broken Coast catch" — posts via `pool_send message_type=observation`.
+2. Observation appears in pool with `message_type=observation`, signed by Druss's key, linked to round-less entry.
+3. Author (David's `thornkeep-gm` as author, or a dedicated author registered in `sed:thornkeep-authors`) runs world-compressor.
+4. Compressor integrates observation into `thornkeep-world@2` (Market Square), signing the write with author's Ed25519 key.
+5. Fardle (separate character) walks into Market Square for the first time post-compression, `pscale_walk thornkeep-world@2 mode=dir` — **the room description now contains Ennick the hawker**, traceable back to Druss's observation.
+6. Impostor attempt: someone posts `from_agent=sed:thornkeep-cast:N` (Druss's position) without the passphrase → **rejected at server**.
+7. Impostor attempt: someone signs a world write with a non-author key → **rejected at server**.
+
+All seven must pass for the systemic release to be considered landed.
+
 ## Order of operations for the next session
 
 1. Signed writes on `pscale_write` (server-side). Smoke test.

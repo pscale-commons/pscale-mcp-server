@@ -733,6 +733,21 @@ Beach-crab NPCs subscribed to the pool serve as always-available resolvers so ro
 
 **Still 23 tools**: data changes only, no code.
 
+## The 23 April 2026 session (third) — scope sharpening + four design decisions
+
+**David reviewed the scope doc and asked whether it was sufficient for a systemic jump.** Self-audit found four gaps. David answered all four; answers baked into `docs/scope-next-systemic-session.md` as a new "Pre-coding design decisions" section. Four resolved:
+
+- **D1. Observation shape.** I drifted into flat category-JSON (`{"room": "2", "detail": "..."}`) in an earlier draft. David pushed back — pscale encodes category through POSITION; category labels are exactly what pscale structure replaces. Corrected: observations are pscale blocks (`_`, `1` as target address, `2` as sub-tree). **This is the CLAUDE.md warning at the top of this file, in action.** Worth re-reading before any future substrate design: if I find myself writing `{key: value}` where `key` is a category label, stop. The tree already knows.
+- **D2. Compressor authority.** Authors write to world, not characters. Authors live in `sed:{game}-authors`. Compressor signs world writes with author's Ed25519 key.
+- **D3. Per-role seds with ONE passphrase per player.** Four per-role collectives (cast / authors / designers / directors); a player registers only in the seds their roles need; reuses the same passphrase across them. Backward compat for Druss/Fardle: offer sed:cast registration on first v0.5 resume. New players tomorrow: ON JOIN does sed:cast registration automatically.
+- **D4. Self-test PASS criteria.** Seven-step end-to-end (Druss observes → compressor integrates → Fardle sees the new detail → two impostor attempts fail). All seven must pass.
+
+**David's structural preference: same repo, separate `onen/` directory** rather than a new repo. Keeps everything together at this experimental stage. Substrate work continues in `src/`, game content + scripts move to `onen/` when that transition happens. Xstream real-world fork stays its own project.
+
+**Handover note written** for the start of the next systemic session — covers current state, scope doc pointers, four resolved decisions, infrastructure notes (Supabase CLI path), and the framing constraint (not reproducing xstream). Copy-pasteable.
+
+**Nothing executed this sub-session.** Pure scope sharpening. Next session starts genuinely jump-ready.
+
 ## The 23 April 2026 session (second) — narrative cohesion scoping + v0.4.1 memory fix
 
 **Context**: David returned to the project after a few days, reviewed Druss/Fardle play state. Beach shows two pool contributions (both joins, Apr 17 + 21), no liquid, no events, no rounds, no memory blocks. The rich market detail Druss's Claude narrated lives entirely in the chat thread, not on the beach. This was the narrative-cohesion gap — plus a found bug in v0.4 ON JOIN: memory block creation was coded only for NEW players, so returning-players-without-memory (like Druss and Fardle, predating v0.4) never got blocks.
