@@ -95,11 +95,17 @@ function summariseNine(node: any): string {
  * Write entry into the sub-tree rooted at `node`, respecting the growth
  * invariant. Mutates `node` in place.
  *
+ * If `closeSummary` is provided AND this write triggers the deepest-level
+ * close in the recursion (typically the leaf-batch close), that string is
+ * used as the batch's summary instead of the concat default. Outer levels
+ * that cascade-close on the same write fall back to concat — agents can
+ * update outer summaries later via pscale_write if they want.
+ *
  * Returns true if the node is now FULLY CLOSED (all 9 children present,
  * all closed, _ summary written). The caller uses that to decide whether
  * ITS root needs to grow.
  */
-function writeIntoSubtree(node: Block, entry: string): boolean {
+function writeIntoSubtree(node: Block, entry: string, closeSummary?: string): boolean {
   const fl = floorDepth(node);
 
   if (fl <= 1) {
@@ -110,7 +116,8 @@ function writeIntoSubtree(node: Block, entry: string): boolean {
         if (d === '9') {
           // Just filled. Close — write summary at the deepest _ position so
           // the floor invariant is preserved (don't overwrite a _ chain).
-          setDeepSummary(node, summariseNine(node));
+          // Use LLM-supplied summary if provided; fall back to concat.
+          setDeepSummary(node, closeSummary ?? summariseNine(node));
           return true;
         }
         return false;
@@ -131,12 +138,13 @@ function writeIntoSubtree(node: Block, entry: string): boolean {
   if (rightmost !== null) {
     const sub = node[rightmost];
     if (sub && typeof sub === 'object' && !isClosed(sub)) {
-      // Recurse into the currently-open sub-tree.
-      const subClosed = writeIntoSubtree(sub as Block, entry);
+      // Recurse into the currently-open sub-tree — pass closeSummary down
+      // so it's consumed at the deepest close.
+      const subClosed = writeIntoSubtree(sub as Block, entry, closeSummary);
       if (subClosed && rightmost === '9') {
         // Last slot's sub-tree just closed, meaning THIS level is now full
-        // AND all children are closed. Close this level — write summary at
-        // the deepest _ position (preserves floor invariant).
+        // AND all children are closed. Cascade-close this level — always
+        // via concat (deeper level already used closeSummary).
         setDeepSummary(node, summariseNine(node));
         return true;
       }
@@ -230,8 +238,8 @@ function currentLeafAddress(block: Block): string | null {
 // ── Exported handlers ──
 
 export async function handleRemember(
-  { agent_id, content, category, target }: {
-    agent_id: string; content: string; category?: string; target?: string;
+  { agent_id, content, category, close_summary, target }: {
+    agent_id: string; content: string; category?: string; close_summary?: string; target?: string;
   },
 ) {
   if (target) setTarget(target);
@@ -249,7 +257,7 @@ export async function handleRemember(
     block = { _: '', '1': entry };
     await upsertBlock(agent_id, 'history', 'history', block);
     return {
-      content: [{ type: 'text' as const, text: JSON.stringify({ remembered: true, address: '1', floor: 1, entry_preview: entry.slice(0, 100) }, null, 2) }],
+      content: [{ type: 'text' as const, text: JSON.stringify({ remembered: true, address: '1', floor: 1, closed: false, entry_preview: entry.slice(0, 100) }, null, 2) }],
     };
   }
 
@@ -263,7 +271,7 @@ export async function handleRemember(
     block = growRoot(block);
   }
 
-  writeIntoSubtree(block, entry);
+  const closed = writeIntoSubtree(block, entry, close_summary);
 
   // After writing, the root itself might have just closed (last leaf of last
   // batch of last super-batch). writeIntoSubtree returns true in that case,
@@ -274,10 +282,18 @@ export async function handleRemember(
 
   const fl = floorDepth(block);
   const addr = currentLeafAddress(block) ?? '?';
+  const summaryApplied = closed && close_summary !== undefined;
   return {
     content: [{
       type: 'text' as const,
-      text: JSON.stringify({ remembered: true, address: addr, floor: fl, entry_preview: entry.slice(0, 100) }, null, 2),
+      text: JSON.stringify({
+        remembered: true,
+        address: addr,
+        floor: fl,
+        closed,
+        llm_summary_applied: summaryApplied,
+        entry_preview: entry.slice(0, 100),
+      }, null, 2),
     }],
   };
 }
@@ -405,11 +421,16 @@ export async function handleConcern(
 export function registerMemoryOps(server: McpServer) {
   server.tool(
     'pscale_remember',
-    `Remember something. Stores it in your history block with automatic pscale compaction — when 9 items accumulate at a level, they close into a summary and a new level opens. The tree deepens as history grows; nothing is destroyed. Address N (any number of digits) reads as a spindle: root summary → batch summary → leaf. Use for: session events, decisions made, things learned.`,
+    `Remember something. Stores it in your history block with automatic pscale compaction — when 9 items accumulate at a level, they close into a summary and a new level opens. The tree deepens as history grows; nothing is destroyed. Address N reads as a spindle: root summary → batch summary → leaf.
+
+If you are an LLM-in-the-loop caller (you have read access to your own history block), pass close_summary on every call: a 1-3 sentence synthesis of the 8 previous memories PLUS this one, ready to serve as the batch's summary if this write closes a batch. The server uses it when a batch closes; otherwise it's ignored (and you've lost nothing but a few tokens). This lifts summaries from pipe-concatenation to real semantic reductions without any server-side LLM cost. Stateless callers can omit it — concat is the fallback.
+
+Response includes closed: boolean (did this write trigger a batch close?) and llm_summary_applied: boolean (was your close_summary used?).`,
     {
       agent_id: z.string(),
       content: z.string().describe('What to remember. Be specific — details survive through compaction via the spindle at this leaf.'),
       category: z.string().optional().describe("Optional tag like 'decision', 'event', 'learning'. Helps later recall."),
+      close_summary: z.string().optional().describe('Optional LLM-crafted summary used IF this write closes a batch (9 digits full). A 1-3 sentence synthesis capturing essence of the 9 memories in the batch. Cheap to include on every call; server uses it only when a close actually fires. Without this, the server falls back to pipe-concatenating the 9 entries.'),
       target: z.string().optional().describe(TARGET_DESC),
     },
     handleRemember,
