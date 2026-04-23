@@ -212,7 +212,25 @@ export async function getPassportFromAddress(addr: string): Promise<Record<strin
     if (!underlying || typeof underlying !== 'string') return null;
     return getPassportBlock(underlying);
   }
-  // sed: and bare agent_ids: preserve existing direct-lookup behaviour.
+  if (addr.startsWith('sed:')) {
+    // sed:{collective}:{position} — the registrant's declaration at that
+    // position IS their passport. Load the collective block, walk to the
+    // position, return the subtree as a passport-shaped record.
+    const parts = addr.split(':');
+    if (parts.length !== 3) return null;
+    const collective = parts[1];
+    const position = parts[2];
+    const row = await getBlock(`sed:${collective}`, collective);
+    if (!row) return null;
+    const { bsp } = await import('./bsp.js');
+    const result = bsp(row.block as any, position, 'dir') as any;
+    const subtree = result?.subtree;
+    if (subtree == null) return null;
+    // String terminal → wrap as passport with only the description.
+    if (typeof subtree === 'string') return { _: subtree };
+    if (typeof subtree === 'object') return subtree as Record<string, any>;
+    return null;
+  }
   return getPassportBlock(addr);
 }
 

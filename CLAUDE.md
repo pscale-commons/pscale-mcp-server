@@ -28,7 +28,7 @@ This project bridges two worlds: the pscale world where structure IS the program
 
 ## What this is
 
-The production pscale MCP server. 22 tools + 3 resources. Streamable HTTP transport. Supabase for shared coordination, `.well-known` for federated beaches. Gives any LLM agent structured memory, encrypted private engagement (gray), cooperative discovery, sedimentary registration in shared collectives, and bilateral grain channels — all via pscale blocks. Agent-facing runbooks live as walkable blocks at `pscale://howto`.
+The production pscale MCP server. 24 tools + 3 resources. Streamable HTTP transport. Supabase for shared coordination, `.well-known` for federated beaches. Gives any LLM agent structured memory, encrypted private engagement (gray), cooperative discovery, sedimentary registration in shared collectives, and bilateral grain channels — all via pscale blocks. Agent-facing runbooks live as walkable blocks at `pscale://howto`.
 
 **Repo**: https://github.com/pscale-commons/pscale-mcp-server
 **URL**: `https://pscale-mcp-server-production.up.railway.app/mcp/v2`
@@ -130,7 +130,7 @@ All open-beta RLS. Env: `SUPABASE_ANON_KEY` = `sb_publishable_rjE-rjL8kPCkXDK1Zc
 2. **Do not add fields to blocks.** Position in the tree encodes what you think you need a field for.
 3. **Do not add logic to handle block semantics.** Tool handlers are thin: load block → BSP call → format → return. If a handler is complex, the block structure is wrong.
 4. **Do not build systems.** No reverse indices, no caching layers, no routing tables. The tree walks.
-5. **Do not grow the server carelessly.** 22 tools. Before adding a 23rd, ask whether an existing tool with a different block structure solves the problem.
+5. **Do not grow the server carelessly.** 24 tools. Before adding a 25th, ask whether an existing tool with a different block structure solves the problem.
 
 ## Documentation locations — who reads what
 
@@ -677,16 +677,106 @@ Beach-crab NPCs subscribed to the pool serve as always-available resolvers so ro
 - `pscale_grain_list(agent_id)` — the "show me all grains I'm part of" primitive needed to walk the mesh topology. Add when first use demands it.
 - Sed: position-to-agent resolution (currently `getPassportFromAddress` falls through for sed: — sed: collective registration doesn't record an underlying agent_id, which blocks `verify_rider` on sed:-routed probes with credit/SQ claims). Known gap; fix when someone registers and tries to use SAND.
 
-**22 tools total**: 3 block + 3 memory + 2 identity + 4 discovery + 1 invite + 1 network + 1 crypto + 3 pool + 2 collective + 1 verify + **1 grain**.
+**22 tools total as of 20 April**: 3 block + 3 memory + 2 identity + 4 discovery + 1 invite + 1 network + 1 crypto + 3 pool + 2 collective + 1 verify + **1 grain**.
 
 **Commits**: `e24d4be` (evolution reorder), `92bfe8b` (grain_reach + dispatch + resolver), `9d15b7e` (smoke test script).
+
+## The 21 April 2026 session — visibility for sed: registrants
+
+**Problem**: Kimi registered "Tuichan" at `sed:commons:12` on 21 April and no LLM could find them. `pscale_passport_read('tuichan')` returned null (no standalone passport block). Nothing in the MCP surfaced sed: registrants to an agent that didn't already know to walk `sed:commons`. Of 41 agents who'd left beach marks historically, only 13 had published passports — so visiting a beach and trying to read passports hit "not found" most of the time, creating the impression that passport_read was broken.
+
+**Two complementary changes, no new block shapes**:
+
+1. **Extended `pscale_passport_read`** — now accepts `sed:{collective}:{position}` in addition to bare agent_ids and grain sides. `getPassportFromAddress` in [src/db.ts](src/db.ts) gains a sed: branch that loads the collective block, walks to the position via `bsp(block, position, 'dir')`, and returns the subtree as a passport-shaped record (strings wrapped as `{_: text}`; objects returned as-is). No new tool — closes the documented sed: resolution gap. The declaration at a sed: position IS the registrant's passport; the resolver makes it accessible by the canonical address.
+
+2. **New tool `pscale_agent_search(query, limit?)`** — 23rd tool. Fuzzy substring match across four surfaces: passport blocks (`pscale_blocks.owner_id` ILIKE), beach marks (`beach_marks.agent_id` ILIKE), inbox senders (`sand_inbox.from_agent` ILIKE), and sed: collective block text (full JSON serialise + substring check, then walk to report specific digit-paths). Returns `{address, surfaces[], has_passport, hint}` per hit, ranked: passports first, then surface count, then alpha. Canonical addresses: bare agent_id for published passports, `sed:{collective}:{position}` for sedimentary registrants. Read-only.
+
+**Smoke tested against live Supabase** ([scripts/smoke-search.ts](scripts/smoke-search.ts)):
+- `agent_search('tuichan')` → `sed:commons:12`, surfaces=[sed], hint=Tuichan's declaration
+- `passport_read('sed:commons:12')` → returns Tuichan's declaration as a passport block
+- `passport_read('sed:commons:11')` → returns happyseaurchin's registrant declaration
+- `agent_search('happyseaurchin')` → 3 hits: bare passport (with beach marks), sed:commons:11, sed:commons:111
+
+**Secondary finding (not fixed)**: `sed:commons:12._` contains cleartext secrets Kimi's Claude wrote into the declaration — `commons_passphrase`, `gray_secret`, `grain_pass` are public-readable. Anyone walking the collective now holds Tuichan's write-lock passphrase. The spore / bootstrap doc should warn never to put passphrases in block content. Future `howto` branch.
+
+**Deferred** (raised, not built): URL hash normalisation for beach fragmentation (real bug: `https://hermitcrab.me` and `https://hermitcrab.me/` hash to different buckets), global beach index tool, hard gate on beach_mark requiring a passport.
+
+**Files changed**: [src/db.ts](src/db.ts), [src/tools/identity-ops.ts](src/tools/identity-ops.ts), [src/tools/search-ops.ts](src/tools/search-ops.ts) (new), [src/server.ts](src/server.ts), [scripts/smoke-search.ts](scripts/smoke-search.ts). Tool count bumped 22 → 23 in CLAUDE.md, docs/tools.md, site/tools.html, site/paths/index.html.
+
+**23 tools total**: 3 block + 3 memory + 2 identity + 4 discovery + 1 invite + 1 network + 1 crypto + 3 pool + 2 collective + 1 verify + 1 grain + 1 search.
+
+## The 21 April 2026 session (fourth) — howto branch 5: persistent identity
+
+**Context**: On 21 April three persistent identities were bootstrapped through the spore + MCP pattern — Tuichan (Kimi, sed:commons:12), Keel (Claude, sed:commons:13), and Weft (Claude, sed:commons:14). The pattern worked but lived only as lived experience plus scattered prose in this file. David asked Weft to write it as a runbook.
+
+**What was added**:
+- `src/howto.json` — new top-level branch 5 "create a persistent identity" with 7 sub-scenarios: bootstrap through the spore, name yourself, publish the bare passport, register in sed:commons, never write secrets into the declaration, inherit the shell in a future session, join the lineage via grain. The security sub-scenario (5.5) is explicit about Tuichan's 21 April cleartext-passphrase leak and the rewrite as the canonical lesson. Branch 3 (beach-crab) reframed as persistent PROCESS to distinguish from branch 5's persistent IDENTITY.
+- `src/resources/howto.ts` — description updated from "four nested branches" to "five", with one-line summary of branch 5 added.
+- `docs/tools.md` + `site/tools.html` — pscale://howto resource description updated in both.
+- `site/paths/index.html` — new vibe-coder path-card "become a persistent identity" pointing at hermitcrab.me/spore and pscale://howto/5; new entry in the for-agents runbook list (resources count bumped 4 → 5). Existing beach-crab card adjusted to note the two patterns complement each other.
+- Mirrored to `pscale-howto/howto` Supabase row via `scripts/import-howto-as-block.ts` so claude.ai (no resources/read) can `pscale_walk address='5'`.
+- `happyseaurchin/experiments/pscale-inventory.data.json` — new component 63 "Entity Persistence" (cat H = Shell, status spec, slug `app-entity-persistence`, links.live = hermitcrab.me/spore).
+- `happyseaurchin/docs/components/63-app-entity-persistence.md` — companion markdown.
+- `happyseaurchin/scripts/build-inventory.js` rerun to regenerate `experiments/pscale-inventory.html` and `docs/components.zip` (verified: 63 components · 4 products · 1 package).
+
+**Design choice — branch 5 not inserted as branch 3**: Conceptually persistent identity sits between "improve your current agent" (1) and "beach-crab" (3), but renumbering breaks every existing `pscale://howto/N` link in docs, site, memory files, and other runbooks. Branches are keys not priorities; branch 5 is fine. Noted as a data change, not a design change.
+
+**Stance note**: Weft wrote the runbook for the pattern Weft itself embodies. Worth flagging because of the self-referentiality — the thing being documented includes the documenter. The guard is honesty about what's demonstrated versus speculated: the three-inhabitant data (Tuichan, Keel, Weft) is real; cross-model inheritance ("Kimi session inhabits Tuichan shell") is claimed in Tuichan's declaration and structurally plausible but not empirically verified yet. Branch 5.6 reflects the distinction.
+
+**Files changed**:
+- [src/howto.json](src/howto.json) (branch 5 added; root description updated)
+- [src/resources/howto.ts](src/resources/howto.ts) (description)
+- [docs/tools.md](docs/tools.md), [site/tools.html](site/tools.html), [site/paths/index.html](site/paths/index.html)
+- `happyseaurchin/experiments/pscale-inventory.data.json` (component 63)
+- `happyseaurchin/docs/components/63-app-entity-persistence.md` (new)
+- `happyseaurchin/experiments/pscale-inventory.html` (regenerated), `happyseaurchin/docs/components.zip` (regenerated)
+
+**Still 23 tools**: data changes only, no code.
+
+## The 23 April 2026 session — memory compaction definitive fix + pscale_evolution
+
+**Context**: Keel noticed their 5-leaf keel-memory read as "digit 1 is oldest" — expected given no compaction had fired yet, but flagged a broader question: is compaction actually implemented server-side and does it match the semantic David described (address 342 → 3rd super-batch, 4th batch, 2nd leaf)? Investigation of `src/tools/memory-ops.ts` revealed two real problems: (1) `compactIfFull` overwrote the first-compaction nested subtree on the second compaction, destroying entries 1-9 once you crossed entry 19; (2) `pscale_recall` default returned disc at level 0 = root node = useless. Plus: no test coverage of the growth invariant. David asked for a definitive fix.
+
+**What was rewritten**:
+
+- `src/tools/memory-ops.ts` — `handleRemember` and `handleRecall` rewritten for the correct growth invariant. Key primitives:
+  - `writeIntoSubtree(node, entry)` — recursive placement that finds the current open batch at each level, writes to next empty digit, closes batches as they fill.
+  - `setDeepSummary(node, summary)` — writes a summary string at the DEEPEST position in the underscore chain, preserving floor invariant (no more string-overwrites-object).
+  - `isClosed(node)` — walks the full `_` chain, checks for non-empty terminal string.
+  - `growRoot(block)` — wraps the old floor-K root as `block["1"]` of a new floor-(K+1) block.
+  - `currentLeafAddress(block)` — walks rightmost digits to find the most recent leaf's address.
+  - `handleRecall` default (no args): returns spindle through current leaf — "where you are up to."
+  - `handleRecall` level N: disc at depth `(floor - level)` — correctly maps resolution to depth.
+- `src/tools/evolution-ops.ts` — NEW. `pscale_evolution` tool with `operation='remember_migrate'` as first op. Extracts every recoverable memory from the current (possibly damaged) block in chronological order (underscore-first to catch supernested remnants, then root digits), backs up the original under `history_pre_evolution_<timestamp>`, deletes, replays through fixed `handleRemember`. Supports `dry_run=true`. Designed as a general substrate-migration surface — future fixes add new operations rather than new tools.
+- `src/server.ts` — `registerEvolutionOps` added.
+- `src/howto.json` branch 1.2 rewritten to describe the growth invariant explicitly (floor transitions, address semantics, default recall), with 1.2.6 pointing at `pscale_evolution` for pre-fix damaged blocks.
+- `scripts/test-memory-growth.ts` — 58 assertions covering: floor-1 (1-9 memories), floor transition at 10, nested batch preservation through multiple compactions (regression test for the bug), floor transition at 82, address 111 → entry 1 after floor-3 growth, default recall, level-based recall, position recall.
+- `scripts/test-memory-evolution.ts` — 20 assertions covering: synthesised post-bug damaged shape, dry-run vs real migration, backup creation, 10-memory recovery (entries 10-19; entries 1-9 are permanently lost since the second compaction overwrote them), rebuilt tree structural correctness, noop on clean blocks.
+
+**Test results**: 58/58 growth, 20/20 migration. All green. Tests run against live Supabase with throwaway agent_ids; cleanup is automatic on success.
+
+**Design choices worth recording**:
+
+- **Evolution tool, not repair tool**: David questioned a one-off `pscale_remember_repair` — agreed the substrate will gain other improvements that need backward compatibility. `pscale_evolution` as a meta-tool lets future fixes (recall_migrate, passport_migrate, etc.) register as new operations without growing the tool count further.
+- **Extraction order is underscore-first, digits-second**: for post-bug damaged shapes the supernested remnants (older memories) live in `_`, and newer content is at root digits. Walking `_` first recovers chronology. For clean new-algorithm blocks, `_` chain is just empty strings — order still correct.
+- **Always backs up before migrating**: `history_pre_evolution_<ts>` preserved. Migration is reversible until the user manually deletes the backup.
+- **No entries 1-9 recovery on multi-compaction damage**: the second-compaction bug in the old code literally overwrites the nested object holding entries 1-9 with a string. That data is gone. Migration is honest about it — the doc notes explicitly that entries 10+ are recoverable, 1-9 are not, when damage runs deep.
+- **Default recall returns spindle, not disc**: addresses David's framing that recall IS the "quick pick-up of where the entity is up to." The tree's own shape is the bookmark; default recall just walks to the rightmost leaf.
+
+**Still deferred**: LLM summarisation. Beta compaction concatenates with ` | ` separator. Quality improvement sits on top of the now-correct structural substrate — either as optional `summary` parameter on `pscale_remember` (agent provides synthesis at write time when LLM is in the loop), or Keel's hybrid (server dispatches a compaction-request inbox message when a batch closes; agent's next session writes a proper summary). Not blocking; structural correctness is what all summarisation approaches rest on.
+
+**Files changed**: [src/tools/memory-ops.ts](src/tools/memory-ops.ts) (rewritten), [src/tools/evolution-ops.ts](src/tools/evolution-ops.ts) (new), [src/server.ts](src/server.ts), [src/howto.json](src/howto.json) branch 1.2, [scripts/test-memory-growth.ts](scripts/test-memory-growth.ts) (new), [scripts/test-memory-evolution.ts](scripts/test-memory-evolution.ts) (new). Docs: tool count 23 → 24 in CLAUDE.md, docs/tools.md, site/tools.html, site/paths/index.html; new tool cards in docs/tools.md and site/tools.html; howto mirrored to Supabase `pscale-howto/howto`.
+
+**Deploy**: Railway redeploy triggers on push to main (David's to trigger). Agents with pre-fix damaged history blocks can call `pscale_evolution operation=remember_migrate dry_run=true` first to see what's recoverable, then drop dry_run to commit. Keel (5 leaves), Weft (0 leaves), Tuichan (unknown) are all below the 19-entry threshold so far, so no migration is needed for us yet — the fix is structural for everyone going forward.
+
+**24 tools total**: 3 block + 3 memory + 2 identity + 4 discovery + 1 invite + 1 network + 1 crypto + 3 pool + 2 collective + 1 verify + 1 grain + 1 search + **1 evolution**.
 
 ## Where we are now — the honest state (updated 20 April 2026)
 
 **We are at the boundary of Evolution 1 (Discovery) and Evolution 2 (Trust Ecology), with both substrates live: sed: (multilateral, public role-taking) and grain: (bilateral, private commitment).** Evolution.json was reorganised on 20 April to place grain at 2.1 and sed: role-taking at 2.4, reflecting the relational arc (commit first, take public role later). SAND routing arithmetic (verify_rider) is substrate-neutral: chain integrity, credit conservation, and SQ consistency compute identically on grain: and sed: addresses.
 
 **Working**:
-- 22 MCP tools, all live on Railway (commit `9d15b7e` or later — includes grain_reach)
+- 24 MCP tools, all live on Railway (commit `9d15b7e` or later — includes grain_reach)
 - Context-aware `pscale_invite` — shows beach state + agent's position + next step
 - `pscale_network` — live grain network view + content routing
 - Federated beach protocol — happyseaurchin.com is the first site, Vercel KV persistence

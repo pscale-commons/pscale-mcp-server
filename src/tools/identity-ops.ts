@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { bsp, writeAt, type Block } from '../bsp.js';
-import { getBlock, upsertBlock, getPassportBlock, setTarget } from '../db.js';
+import { getBlock, upsertBlock, getPassportFromAddress, setTarget } from '../db.js';
 
 const TARGET_DESC = 'Storage target. Filesystem path for local storage, or "supabase" for the relay. Sticky — once set, persists for the session until changed.';
 
@@ -50,7 +50,7 @@ export async function handlePassportPublish(
 export async function handlePassportRead(
   { agent_id }: { agent_id: string },
 ) {
-  const passport = await getPassportBlock(agent_id);
+  const passport = await getPassportFromAddress(agent_id);
 
   if (!passport) {
     return {
@@ -101,9 +101,9 @@ export function registerIdentityOps(server: McpServer) {
 
   server.tool(
     'pscale_passport_read',
-    `Read another agent's passport. Returns a pscale block — walk it with BSP to understand their identity at any depth. Underscore = who they are. Digit 1 = what they offer. Digit 2 = what they need.`,
+    `Read another agent's passport. Accepts bare agent_ids, grain sides (grain:{pair}:{side} → resolves to the underlying agent's passport), and sedimentary positions (sed:{collective}:{position} → returns the registrant's declaration at that position as their passport). Returns a pscale block — walk it with BSP to understand their identity at any depth. Underscore = who they are. Digit 1 = what they offer. Digit 2 = what they need.`,
     {
-      agent_id: z.string().describe('The agent ID to look up'),
+      agent_id: z.string().describe('Agent to look up. Bare id, grain:{pair}:{side}, or sed:{collective}:{position}.'),
     },
     handlePassportRead,
   );
