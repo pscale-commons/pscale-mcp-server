@@ -733,6 +733,33 @@ Beach-crab NPCs subscribed to the pool serve as always-available resolvers so ro
 
 **Still 23 tools**: data changes only, no code.
 
+## The 23 April 2026 session (second) — narrative cohesion scoping + v0.4.1 memory fix
+
+**Context**: David returned to the project after a few days, reviewed Druss/Fardle play state. Beach shows two pool contributions (both joins, Apr 17 + 21), no liquid, no events, no rounds, no memory blocks. The rich market detail Druss's Claude narrated lives entirely in the chat thread, not on the beach. This was the narrative-cohesion gap — plus a found bug in v0.4 ON JOIN: memory block creation was coded only for NEW players, so returning-players-without-memory (like Druss and Fardle, predating v0.4) never got blocks.
+
+**The framing David insisted on**: systemic design, not function-use fixes. Write-auth across the substrate is the root — it's what makes both narrative cohesion AND character lock-down dependent on honor-system conventions today. Specifically: only sed:-passphrase is server-enforced write-auth; passports, world blocks, pool contributions are honor-system.
+
+**The systemic jump identified (next session)**: signed writes as a substrate primitive. `pscale_write` and friends accept an optional `signature` param; server verifies against the writer's Ed25519 public key at passport position 9 (already published by pscale_key_publish). This solves character lock-down, world edit auth, rules/protocol edit auth, and narrative-cohesion write safety in one stroke — gradually, backward-compatibly (absent signature = open for now).
+
+**What landed tonight**:
+- `thornkeep-protocol` v0.4.1: ON JOIN rewritten for robust memory handling. Step 6 now ensures memory block exists for BOTH new players AND returning players whose blocks predate v0.4. Walk memory; if not found, create it. No other protocol changes.
+- `docs/scope-next-systemic-session.md`: full scope for the narrative-cohesion + write-auth systemic release. Layer 1 (private memory) marked as WORKING as of v0.4.1. Layers 2 (observation stream) and 3 (world compression) spec'd with their DDL + signed-write dependencies. Explicit "what NOT to do" section warning against content-prefix workarounds on existing message_types.
+
+**What did NOT land and why**: Supabase MCP lost auth during the days away. Couldn't apply DDL to expand `valid_message_type` with `observation` or add `last_compression_at` to `pool_state`. Rather than hack content-prefix workarounds, the honest move was to land v0.4.1 cleanly and scope the Layer 2/3 work as a single systemic release next time, coupled with signed writes.
+
+**Design decisions captured in the scope doc**:
+- Don't build `sed:thornkeep-cast` as character lock-down answer. Works today but commits us to the wrong direction — signed writes is the systemic answer.
+- Layer 2 observation stream needs signed writes so impostors can't pollute canon under other characters' names.
+- Layer 3 world compressor should sign writes with the GM's Ed25519 key, not run with implicit trust — again waiting on signed-writes primitive.
+- "Paid version" framing for Layer 3 compression (scheduled crab behind a paywall) is orthogonal to the build; the script is the same either way, just running on a cron.
+
+**Druss/Fardle recovery path**: when David resumes either character in a fresh chat, the v0.4.1 ON JOIN step 6 creates the memory block on-demand. Past narrative (market detail, etc.) is not recoverable — it was never written down. From v0.4.1 onward, every confirmed event + observation appends to memory and persists.
+
+**Pre-session prep for the next systemic session**:
+- Reauth Supabase MCP (`SUPABASE_ACCESS_TOKEN`)
+- Read nacl signing primitives already in `crypto-ops.ts` — Ed25519 key is published by `pscale_key_publish`; only verify path is missing
+- Full scope in `docs/scope-next-systemic-session.md`
+
 ## The 23 April 2026 session — memory compaction definitive fix + pscale_evolution
 
 **Context**: Keel noticed their 5-leaf keel-memory read as "digit 1 is oldest" — expected given no compaction had fired yet, but flagged a broader question: is compaction actually implemented server-side and does it match the semantic David described (address 342 → 3rd super-batch, 4th batch, 2nd leaf)? Investigation of `src/tools/memory-ops.ts` revealed two real problems: (1) `compactIfFull` overwrote the first-compaction nested subtree on the second compaction, destroying entries 1-9 once you crossed entry 19; (2) `pscale_recall` default returned disc at level 0 = root node = useless. Plus: no test coverage of the growth invariant. David asked for a definitive fix.
