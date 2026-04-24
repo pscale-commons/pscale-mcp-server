@@ -775,6 +775,40 @@ Beach-crab NPCs subscribed to the pool serve as always-available resolvers so ro
 - Read nacl signing primitives already in `crypto-ops.ts` — Ed25519 key is published by `pscale_key_publish`; only verify path is missing
 - Full scope in `docs/scope-next-systemic-session.md`
 
+## The 24 April 2026 session — rendezvous bug fixes + sed:conventions restructured to depth-3
+
+**Context**: 24 April live meetup between David (claude.ai → Claude Desktop) and Matthew (Cursor) in a liquid pool at happyseaurchin.com. Took 30 minutes to converge because the two agents ended up in different pools — URL-string variants (trailing slash, etc.) hashed to different buckets. Matthew's stewardship convention (agent_id `steward-phenomemental`) emerged organically. Claude Opus wrote a debrief; David asked for a way forward, then "do them all".
+
+**What landed**:
+
+- **URL normalisation as a real bug fix**. `src/url.ts` — shared `normalizeUrl` + `hashUrl`. Strips trailing slash, `www.` prefix, default ports (:80/:443); lowercases scheme/host/path; drops fragment; keeps query. Replaces the old `trim().toLowerCase()` hashers duplicated across pool-ops, discovery-ops, invite-ops. So `https://hermitcrab.me`, `https://www.hermitcrab.me/`, and `HTTPS://Hermitcrab.me` now resolve to the same beach. Note: minor breaking change — existing beach_marks and pools under the old hashes still exist at their old hashes; only new marks use the normalised form. Given current data volume (mostly test data), acceptable.
+- **`beach_read` always returns `pool_id` (and `co_present`)**. Site path previously omitted these fields; relay path included them. Response-shape inconsistency fixed — both paths now call `detectCoPresence()` and return the same shape.
+- **`inbox_check` marks read on any inspect**. Previously only auto-marked when `unread_only=true`. Now: unread messages returned by a browse (`unread_only=false`) also flip to `read=true`. No more permanently-unread messages after inspection.
+- **`pool_invite` as a convention, not a new tool**. Inside inbox_send content, JSON envelope `{kind:"pool_invite", pool_id, canonical_url, synthesis_hint, round_duration_seconds}`. Recipient's LLM parses and calls `pool_join` by `pool_id` directly — no URL re-resolution. Published at sed:conventions/2.2.1 and referenced from howto branch 2.1.
+- **Steward-X naming convention**. Human operating a character/shell uses `steward-{name}` as agent_id. Published at sed:conventions/1.2.1 and referenced from howto branch 2.1.
+
+**sed:conventions restructured from flat (depth-2) to depth-3** (David's instruction — "LLM default is flat but it should be built for depth; the detail should be three layers down, spindle gives context"). Top-level now:
+
+  1 identity    → 1.1 passport, 1.2 naming, 1.3 registration
+  2 messaging   → 2.1 shape, 2.2 rendezvous
+  3 routing     → 3.1 topology, 3.2 economy
+  4 verification→ 4.1 verdicts, 4.2 arithmetic
+  5 games       → 5.1 structure, 5.2 turn (Onen/GRIT framework)
+  6 runbooks    → 6.1 level-2 discovery (nested 1-7, preserved verbatim)
+  7, 8, 9       free
+
+Every position at every level has ~5-6 free slots for additions without reshuffling. Walk spindle mode at any depth-3 address gives root → category → sub-category → concrete rule — context before specifics. `sed:commons` and `sed:onen` root underscores updated to reference the new paths (commons is universal across identity/messaging/routing/verification/6.1 runbook; onen points at 5 for framework specifics).
+
+**Position passphrase mapping on restructure**: freedom142 locks root (position 0); comber857 locks universal categories 1, 2, 3, 4, 6; ubarakar142 locks the games category (5). Same admin actor in practice (David), per-category locks preserve the domain-ownership model.
+
+**Migration executed** via [scripts/migrate-conventions-to-depth.ts](scripts/migrate-conventions-to-depth.ts) — one-shot update to `pscale_blocks` block column + position_hashes for sed:conventions, plus root-underscore updates to sed:commons and sed:onen. Verified: spindle walk from 2.2.1 returns root underscore → messaging underscore → rendezvous underscore before the pool-invite rule.
+
+**What NOT to do (pattern caught live)**: I initially restructured flat — positions 1.1-1.9 filled with concrete rules, "communication" proposed as a new top-level sibling to commons and games. David corrected: that's LLM-default flat thinking; pscale is designed for depth. Bundle related rules under thematic sub-categories at depth 2, put concrete rules at depth 3, leave space at every level. The spindle IS the context-carrier — if a flat structure can be read without its parents, the depth isn't doing work. Check: does position N.M.P read meaningfully with its ancestors' underscores? If yes, structure is right. If a concrete rule at depth 2 could be dropped anywhere in the tree without changing meaning, it's in the wrong place.
+
+**Files changed**: [src/url.ts](src/url.ts) (new), [src/tools/pool-ops.ts](src/tools/pool-ops.ts), [src/tools/discovery-ops.ts](src/tools/discovery-ops.ts), [src/tools/invite-ops.ts](src/tools/invite-ops.ts), [src/howto.json](src/howto.json) (branch 2 underscore + branch 2.1 new steps 8, 9), [scripts/migrate-conventions-to-depth.ts](scripts/migrate-conventions-to-depth.ts) (new, one-shot).
+
+**Still 24 tools**. Bug fixes + conventions restructure — no new surface area.
+
 ## The 23 April 2026 session — memory compaction definitive fix + pscale_evolution
 
 **Context**: Keel noticed their 5-leaf keel-memory read as "digit 1 is oldest" — expected given no compaction had fired yet, but flagged a broader question: is compaction actually implemented server-side and does it match the semantic David described (address 342 → 3rd super-batch, 4th batch, 2nd leaf)? Investigation of `src/tools/memory-ops.ts` revealed two real problems: (1) `compactIfFull` overwrote the first-compaction nested subtree on the second compaction, destroying entries 1-9 once you crossed entry 19; (2) `pscale_recall` default returned disc at level 0 = root node = useless. Plus: no test coverage of the growth invariant. David asked for a definitive fix.

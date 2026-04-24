@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { createHash } from 'node:crypto';
 import { getClient, getPublicKeys } from '../db.js';
+import { hashUrl, parseBeachUrl } from '../url.js';
 import {
   deriveKeypair,
   formatPublicKeys,
@@ -52,20 +52,6 @@ function parseEcosquared(raw?: string): unknown | null {
   return JSON.parse(raw);
 }
 
-/** Hash a URL to match beach_marks schema (same as xstream-play) */
-function hashUrl(url: string): string {
-  return createHash('sha256').update(url.trim().toLowerCase()).digest('hex').slice(0, 16);
-}
-
-/** Extract domain and path from a URL */
-function parseBeachUrl(url: string): { domain: string; path: string } {
-  try {
-    const u = new URL(url.trim().toLowerCase());
-    return { domain: `${u.protocol}//${u.host}`, path: u.pathname || '/' };
-  } catch {
-    return { domain: url.trim().toLowerCase(), path: '/' };
-  }
-}
 
 // ── .well-known resolution (1.9 — federated beach) ──
 
@@ -226,6 +212,13 @@ export async function handleBeachRead(
 ) {
   const { domain, path } = parseBeachUrl(url);
   const effectiveLimit = limit ?? 20;
+  const url_hash = hashUrl(url);
+
+  // Co-presence + pool_id live in the relay regardless of where the marks
+  // themselves are served from, so always run the detection. Agents depend
+  // on these fields being present (possibly null) to decide whether to join
+  // a pool — omitting them on the site path was a shape bug.
+  const { co_present, pool_id } = await detectCoPresence(url_hash);
 
   // Try site first. If it responds, that's the beach.
   const siteMarks = await tryWellKnownRead(domain, path);
@@ -236,13 +229,12 @@ export async function handleBeachRead(
     return {
       content: [{
         type: 'text' as const,
-        text: JSON.stringify({ source: 'site', mark_count: marks.length, marks }, null, 2),
+        text: JSON.stringify({ source: 'site', mark_count: marks.length, marks, co_present, pool_id }, null, 2),
       }],
     };
   }
 
   // Site doesn't host a beach — use relay
-  const url_hash = hashUrl(url);
   const client = getClient();
   const { data, error } = await client
     .from('beach_marks')
@@ -256,8 +248,6 @@ export async function handleBeachRead(
   const marks = (data || []).map((m: any) => ({
     agent_id: m.agent_id, purpose: m.purpose, timestamp: m.created_at,
   }));
-
-  const { co_present, pool_id } = await detectCoPresence(url_hash);
 
   return {
     content: [{
@@ -502,13 +492,16 @@ export async function handleInboxCheck(
     return msg;
   });
 
-  // Mark as read
-  if (effectiveUnreadOnly && messages.length > 0) {
-    const ids = messages.map((m: any) => m.id);
+  // Mark as read on any inspect — browsing with unread_only=false still
+  // counts as having seen the messages. Previously this only fired on
+  // unread_only=true, so unread messages returned from a browse stayed
+  // flagged unread forever.
+  const unreadIds = messages.filter((m: any) => !m.read).map((m: any) => m.id);
+  if (unreadIds.length > 0) {
     await client
       .from('sand_inbox')
       .update({ read: true })
-      .in('id', ids);
+      .in('id', unreadIds);
   }
 
   return {

@@ -1,12 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { createHash } from 'node:crypto';
 import { getClient } from '../db.js';
-
-/** Hash a URL to match beach_marks schema (same as xstream-play) */
-function hashUrl(url: string): string {
-  return createHash('sha256').update(url.trim().toLowerCase()).digest('hex').slice(0, 16);
-}
+import { hashUrl } from '../url.js';
 
 const DEFAULT_TTL_DAYS = 30;
 const DEFAULT_ROUND_DURATION_SECONDS = 10;

@@ -1,15 +1,11 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { createHash } from 'node:crypto';
 import invite from '../invite.json' with { type: 'json' };
 import { collectUnderscore, getHiddenDirectory } from '../bsp.js';
 import { getClient } from '../db.js';
+import { hashUrl } from '../url.js';
 
 const CANONICAL_BEACH = 'https://hermitcrab.me';
-
-function hashUrl(url: string): string {
-  return createHash('sha256').update(url.trim().toLowerCase()).digest('hex').slice(0, 16);
-}
 
 // ── Agent state from Supabase ──
 
