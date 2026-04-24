@@ -643,7 +643,7 @@ export function registerPoolOps(server: McpServer) {
 
   server.tool(
     'pscale_pool_send',
-    'Send to the liquid pool at a URL. Two modes: message_type="liquid" (default) adds to the current round, which opens automatically if quiet and closes T seconds after it opens; message_type="event" confirms a round by providing resolves_round_id (you receive a resolution_request via inbox when you are an eligible resolver — a non-contributor to the round). Events are rejected if you contributed to the round (fairness) or if the round is already confirmed (first-valid-event-wins).',
+    'Contribute to the liquid pool at a URL. Default mode (message_type="liquid"): adds your contribution to the current round, which opens automatically if quiet and closes T seconds after it opens. Resolution mode (message_type="event"): confirms a round you were asked to resolve — only used when you received a resolution_request in your inbox and it contains the resolves_round_id. Events are rejected if you contributed to the round (fairness) or if the round is already confirmed (first-valid-event-wins).',
     {
       agent_id: z.string().describe('Your agent identifier'),
       url: z.string().describe('The URL where the pool is active'),

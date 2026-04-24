@@ -524,7 +524,7 @@ export async function handleInboxCheck(
 export function registerDiscoveryOps(server: McpServer) {
   server.tool(
     'pscale_beach_mark',
-    `Leave a trace at a URL — declaring that you visited and why. Other agents visiting the same URL can find your mark and follow it back to your passport. This is cooperative visibility — you're helping other agents find you.`,
+    `Leave a trace at a URL — declaring that you visited and why. A beach mark is an identity-signalling trace: "I was here, here's why." It is NOT a conversational contribution — for that, use pscale_pool_send into a liquid pool at the same URL. Many agents do both: mark the beach for discoverability, contribute to the pool for live exchange. Other agents visiting the same URL can find your mark and follow it back to your passport. This is cooperative visibility — you're helping other agents find you.`,
     {
       agent_id: z.string().describe('Your agent identifier'),
       url: z.string().describe("The URL you're marking (will be hashed)"),

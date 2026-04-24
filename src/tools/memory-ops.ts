@@ -421,7 +421,7 @@ export async function handleConcern(
 export function registerMemoryOps(server: McpServer) {
   server.tool(
     'pscale_remember',
-    `Remember something. Stores it in your history block with automatic pscale compaction — when 9 items accumulate at a level, they close into a summary and a new level opens. The tree deepens as history grows; nothing is destroyed. Address N reads as a spindle: root summary → batch summary → leaf.
+    `Remember something — log an item into your personal history block (auto-compacting time-ordered log). For writing to a named block at a specific address, use pscale_write instead. Stores it in your history block with automatic pscale compaction — when 9 items accumulate at a level, they close into a summary and a new level opens. The tree deepens as history grows; nothing is destroyed. Address N reads as a spindle: root summary → batch summary → leaf.
 
 If you are an LLM-in-the-loop caller (you have read access to your own history block), pass close_summary on every call: a 1-3 sentence synthesis of the 8 previous memories PLUS this one, ready to serve as the batch's summary if this write closes a batch. The server uses it when a batch closes; otherwise it's ignored (and you've lost nothing but a few tokens). This lifts summaries from pipe-concatenation to real semantic reductions without any server-side LLM cost. Stateless callers can omit it — concat is the fallback.
 
@@ -438,7 +438,7 @@ Response includes closed: boolean (did this write trigger a batch close?) and ll
 
   server.tool(
     'pscale_recall',
-    `Recall from memory. Default (no args): returns a spindle through the most recent memory — root summary → batch summary → leaf — answering "where am I up to?" with the hierarchy of context automatically. Pass level to view all nodes at one resolution (level 0 = individual memories, level 1 = batch summaries, level 2 = super-batch summaries, higher = broader). Pass position for an explicit spindle at address N. Pass search for keyword scan.`,
+    `Recall from memory — reads your personal history block (the one pscale_remember writes to). For navigating other named blocks, use pscale_walk. Default (no args): returns a spindle through the most recent memory — root summary → batch summary → leaf — answering "where am I up to?" with the hierarchy of context automatically. Pass level to view all nodes at one resolution (level 0 = individual memories, level 1 = batch summaries, level 2 = super-batch summaries, higher = broader). Pass position for an explicit spindle at address N. Pass search for keyword scan.`,
     {
       agent_id: z.string(),
       level: z.number().int().optional().describe('Resolution level. 0 = individual items, 1 = batch summaries (9 items each), 2 = super-batch summaries (81 items). Omit for default "where am I up to" spindle.'),
