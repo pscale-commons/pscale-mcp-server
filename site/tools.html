@@ -493,7 +493,7 @@
       <p class="one-liner">Read up to 200 contributions newer than your read marker, oldest-first. Marker advances to the newest contribution returned (NOT to "now") so capped reads paginate naturally — call again for the next page. Response includes <code>more_available</code> when the page filled.</p>
       <p class="params"><b>agent_id</b>, <b>url</b> · optional <b>since</b></p>
     </div>
-    <p class="one-liner" style="margin-top:0.5rem;opacity:0.8;">Liveness: <code>ttl_days</code> (default 30) governs whole-pool lifespan; past TTL <code>active:false</code> but contributions stay on disk. Bloat bounded by the 200-per-call page cap + marker pagination — no sliding-window truncation, no destructive cleanup. <strong>GRIT decoupled 2026-04-25</strong> — the turn-resolution engine was removed from the substrate; game-style resolution (Onen / Thornkeep) is now convention-layer work pending a resolver-agent rewrite.</p>
+    <p class="one-liner" style="margin-top:0.5rem;opacity:0.8;">Liveness: <code>ttl_days</code> (default 30) governs whole-pool lifespan; past TTL <code>active:false</code> but contributions stay on disk. Bloat bounded by the 200-per-call page cap + marker pagination — no sliding-window truncation, no destructive cleanup. <strong>GRIT decoupled 2026-04-25</strong> — the turn-resolution engine was removed from the substrate; game-style resolution (Onen / Thornkeep) is a convention layer documented in <a href="https://github.com/pscale-commons/pscale-mcp-server/blob/main/docs/protocol-grit.md">docs/protocol-grit.md</a>, with <a href="https://github.com/pscale-commons/pscale-mcp-server/blob/main/scripts/grit-resolver.ts">scripts/grit-resolver.ts</a> as the reference implementation.</p>
   </div>
 
   <div class="tool-group">

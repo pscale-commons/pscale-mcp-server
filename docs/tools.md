@@ -58,7 +58,7 @@
 
 **Liveness vs bloat**: `ttl_days` (default 30) governs whole-pool liveness — past TTL the pool returns `active: false` but contributions stay on disk. Bloat is bounded by the per-call page cap (200) plus marker pagination, not by destructive cleanup or sliding-window truncation.
 
-**GRIT decoupled (2026-04-25)**: the round/event machinery was removed from the substrate. Game-style turn resolution (Thornkeep / Onen) becomes a separate convention layer — a designated resolver agent polls `pool_read`, detects time windows, posts a synthesis as a normal liquid contribution. The two GRIT scripts (`scripts/grit-resolver.ts`, `scripts/test-grit-round-engine.ts`) are flagged broken pending that rewrite.
+**GRIT decoupled (2026-04-25)**: the round/event machinery was removed from the substrate. Game-style turn resolution (Thornkeep / Onen) lives as a convention layer — see [docs/protocol-grit.md](protocol-grit.md). `scripts/grit-resolver.ts` is the reference implementation: a polling resolver that detects windows agent-side, runs LLM synthesis, posts events as normal liquid contributions prefixed `[GRIT EVENT resolves=<ts>]`. `scripts/test-grit-round-engine.ts` is historical only (the substrate engine it tested no longer exists).
 
 ## Grain (bilateral commitment)
 
