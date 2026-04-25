@@ -1,32 +1,34 @@
 #!/usr/bin/env tsx
 /**
- * **BROKEN as of 2026-04-25 GRIT decoupling**: this script depends on
- * server-side round_engine machinery (resolution_request inbox dispatch,
- * pool_send message_type=event, resolves_round_id) that was removed when
- * pool-ops.ts was returned to its primitive shape. GRIT now needs to live
- * as a pure convention layer on top of the primitive pool: poll pool_read,
- * detect time windows yourself, post synthesis as a normal liquid
- * contribution. Rewrite when the next Onen/Thornkeep play session is set up.
+ * GRIT resolver — convention-layer rebuild (2026-04-25).
  *
- * GRIT beach-crab resolver — an always-on non-contributor that resolves
- * rounds for a beach-game when live human players aren't available.
+ * After the substrate cleanup that returned pool-ops.ts to its primitive
+ * shape, GRIT lives entirely in agent-side discipline. This script polls
+ * each configured game pool, detects closeable windows by inspecting the
+ * contribution stream, synthesises with an LLM, and posts the resolution
+ * as a normal liquid contribution prefixed `[GRIT EVENT resolves=...]`.
+ *
+ * No server-side rounds, no inbox dispatch, no message_type column.
+ * See docs/protocol-grit.md for the convention.
  *
  * Loop:
  *   every POLL_INTERVAL_SECONDS:
- *     - pscale_inbox_check for unread messages
- *     - for each message with type=resolution_request:
- *         - parse window_liquid, contributors
- *         - verify not in contributors (server already filtered, but double-check)
- *         - walk the game's rules and world blocks (configured per game)
- *         - call an LLM with the synthesis prompt
- *         - pscale_pool_send message_type=event with resolves_round_id
+ *     for each game:
+ *       rows = pool_read(resolver_id, game.url)
+ *       window_start = first liquid timestamp after the most recent event
+ *       if (now - window_start) < game.window_seconds: skip (window still open)
+ *       contributor_ids = liquid agents in [window_start, now]
+ *       if resolver_id in contributor_ids: skip (fairness — convention)
+ *       re-read pool; if a [GRIT EVENT resolves=window_start] already exists: skip (race tolerance)
+ *       synthesise with LLM (rules + world blocks + window liquid)
+ *       pool_send(content="[GRIT EVENT resolves=<ts> window=<s>s]\n<synthesis>")
  *
  * Config:
  *   .env:
  *     ANTHROPIC_API_KEY     — for LLM synthesis (Haiku recommended)
  *     SUPABASE_ANON_KEY     — pscale relay access
  *     GRIT_RESOLVER_AGENT   — agent_id for this crab, e.g. "crab-thornkeep"
- *     GRIT_GAMES_CONFIG     — path to JSON with game list (see below)
+ *     GRIT_GAMES_CONFIG     — path to JSON with game list
  *
  * GRIT_GAMES_CONFIG example (games.json):
  *   {
@@ -36,34 +38,35 @@
  *         "url": "https://play.onen.ai/thornkeep",
  *         "gm_agent_id": "thornkeep-gm",
  *         "rules_block": "thornkeep-rules",
- *         "world_block": "thornkeep-world"
+ *         "world_block": "thornkeep-world",
+ *         "window_seconds": 60
  *       }
  *     ]
  *   }
  *
- * On startup: subscribes to each game's pool (pool_join) so the crab appears
- * in pool_read_markers and is eligible to receive resolution_request messages.
+ * On startup: subscribes to each game's pool (pool_join) so the resolver
+ * has a read marker and can call pool_read.
  *
  * Usage:
  *   SUPABASE_ANON_KEY=... ANTHROPIC_API_KEY=... GRIT_RESOLVER_AGENT=crab-thornkeep \
  *   GRIT_GAMES_CONFIG=games.json npx tsx scripts/grit-resolver.ts
  */
 
-import { handlePoolJoin, handlePoolSend } from '../src/tools/pool-ops.js';
-import { handleInboxCheck } from '../src/tools/discovery-ops.js';
+import { handlePoolJoin, handlePoolSend, handlePoolRead } from '../src/tools/pool-ops.js';
 import { getClient } from '../src/db.js';
 import Anthropic from '@anthropic-ai/sdk';
 import { readFileSync } from 'node:fs';
 
 const POLL_INTERVAL_SECONDS = 30;
 const LLM_MODEL = 'claude-haiku-4-5-20251001';
+const EVENT_PREFIX_RE = /^\[GRIT EVENT(?:\s+resolves=([^\s\]]+))?(?:\s+window=([^\s\]]+))?\]/;
 
 const RESOLVER_AGENT = process.env.GRIT_RESOLVER_AGENT;
 const GAMES_CONFIG_PATH = process.env.GRIT_GAMES_CONFIG;
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 
 if (!RESOLVER_AGENT) {
-  console.error('GRIT_RESOLVER_AGENT is required (the crab\'s agent_id)');
+  console.error("GRIT_RESOLVER_AGENT is required (the resolver's agent_id)");
   process.exit(1);
 }
 if (!GAMES_CONFIG_PATH) {
@@ -81,22 +84,35 @@ interface GameConfig {
   gm_agent_id: string;
   rules_block: string;
   world_block: string;
+  window_seconds?: number;
 }
 
 const config: { games: GameConfig[] } = JSON.parse(readFileSync(GAMES_CONFIG_PATH, 'utf-8'));
 const anthropic = new Anthropic({ apiKey: ANTHROPIC_KEY });
 
+const DEFAULT_WINDOW_SECONDS = 60;
+
 function parse(r: any) { return JSON.parse(r.content[0].text); }
+
+function isEvent(message: string): boolean {
+  return EVENT_PREFIX_RE.test(message);
+}
+
+function eventResolvesAt(message: string): string | null {
+  const m = message.match(EVENT_PREFIX_RE);
+  return m ? (m[1] ?? null) : null;
+}
 
 // ── Boot ──
 
 async function subscribeToGames() {
   for (const game of config.games) {
-    console.log(`[boot] subscribing to ${game.name} at ${game.url}`);
+    const window = game.window_seconds ?? DEFAULT_WINDOW_SECONDS;
+    console.log(`[boot] subscribing to ${game.name} at ${game.url} (window=${window}s)`);
     await handlePoolJoin({
       agent_id: RESOLVER_AGENT!,
       url: game.url,
-      purpose: `${RESOLVER_AGENT} — GRIT resolver`,
+      purpose: `${RESOLVER_AGENT} — GRIT resolver (window=${window}s, never contributes liquid, only emits events)`,
     });
   }
 }
@@ -112,16 +128,6 @@ async function loadBlock(owner_id: string, name: string): Promise<Record<string,
     .eq('name', name)
     .single();
   return data ? ((data as any).block as Record<string, any>) : null;
-}
-
-function gameFromUrlHash(url_hash_prefix: string): GameConfig | null {
-  // resolution_request content carries url_hash; match by prefix in game URL hash
-  const { createHash } = require('node:crypto');
-  for (const g of config.games) {
-    const h = createHash('sha256').update(g.url.trim().toLowerCase()).digest('hex').slice(0, 16);
-    if (h.startsWith(url_hash_prefix) || h === url_hash_prefix) return g;
-  }
-  return null;
 }
 
 // ── LLM synthesis ──
@@ -169,76 +175,112 @@ Write the resolution paragraph now.`;
   return text.text.trim();
 }
 
-// ── Main tick ──
+// ── Per-game tick ──
 
-async function tick() {
-  const result = parse(await handleInboxCheck({
+async function tickGame(game: GameConfig) {
+  const windowSeconds = game.window_seconds ?? DEFAULT_WINDOW_SECONDS;
+
+  // Read the pool from the start of time (since=epoch) so we always see the
+  // full chronological picture for window-detection. Read marker advances
+  // anyway; we just don't rely on it for windowing.
+  const result = parse(await handlePoolRead({
     agent_id: RESOLVER_AGENT!,
-    unread_only: true,
+    url: game.url,
+    since: '1970-01-01T00:00:00Z',
   }));
 
-  const messages = result.messages || [];
-  if (messages.length === 0) return;
+  if (!result.active) {
+    console.warn(`[${game.name}] pool not active (TTL'd?) — skipping`);
+    return;
+  }
 
-  for (const msg of messages) {
-    const type = msg.message?.type;
-    if (type !== 'resolution_request') continue;
+  const contributions = (result.contributions || []) as Array<{
+    agent_id: string;
+    message: string;
+    message_type: string;
+    created_at: string;
+  }>;
 
-    let payload: any;
-    try { payload = JSON.parse(msg.message.content); }
-    catch (e) { console.warn('[tick] failed to parse resolution_request content', e); continue; }
-
-    const { round_id, url_hash, window_liquid, contributors } = payload;
-    if (!round_id || !url_hash) { console.warn('[tick] malformed resolution_request, skipping'); continue; }
-
-    if (contributors?.includes(RESOLVER_AGENT)) {
-      console.log(`[tick] ${round_id}: crab is in contributors, skipping (shouldn't happen)`);
-      continue;
+  // 1. Find the most recent event boundary
+  let lastEventIdx = -1;
+  for (let i = contributions.length - 1; i >= 0; i--) {
+    if (isEvent(contributions[i].message)) {
+      lastEventIdx = i;
+      break;
     }
+  }
 
-    const game = gameFromUrlHash(url_hash.slice(0, 16));
-    if (!game) {
-      console.warn(`[tick] ${round_id}: no game config matches url_hash ${url_hash}`);
-      continue;
-    }
+  // 2. Window = liquid (non-event, non-join) after the last event
+  const windowRows = contributions
+    .slice(lastEventIdx + 1)
+    .filter(r => !isEvent(r.message) && r.message_type !== 'join');
 
-    console.log(`[tick] ${round_id}: resolving for ${game.name} with ${window_liquid.length} liquid entries`);
+  if (windowRows.length === 0) return; // nothing to resolve
 
-    let synthesis: string;
-    try {
-      synthesis = await synthesise(game, window_liquid, contributors);
-    } catch (e: any) {
-      console.error(`[tick] ${round_id}: LLM synthesis failed:`, e.message);
-      continue;
-    }
+  const windowStart = windowRows[0].created_at;
+  const elapsedMs = Date.now() - new Date(windowStart).getTime();
+  if (elapsedMs < windowSeconds * 1000) return; // window still open
 
-    const sendResult = parse(await handlePoolSend({
-      agent_id: RESOLVER_AGENT!,
-      url: game.url,
-      message_type: 'event',
-      resolves_round_id: round_id,
-      content: synthesis,
-    }));
+  // 3. Fairness — convention: don't resolve a window we contributed to
+  const contributorIds = Array.from(new Set(windowRows.map(r => r.agent_id)));
+  if (contributorIds.includes(RESOLVER_AGENT!)) {
+    console.log(`[${game.name}] window since ${windowStart}: resolver is in contributors, abstaining`);
+    return;
+  }
 
-    if (sendResult.confirmed) {
-      console.log(`[tick] ${round_id}: ✓ resolved (notified ${sendResult.contributors_notified?.length ?? 0} contributors)`);
-    } else if (sendResult.error?.includes('already resolved')) {
-      console.log(`[tick] ${round_id}: already resolved by another resolver (fine)`);
-    } else {
-      console.warn(`[tick] ${round_id}: event rejected: ${sendResult.error}`);
-    }
+  // 4. Race tolerance — re-read just before writing; if anyone else already
+  //    resolved this window, defer.
+  const recheck = parse(await handlePoolRead({
+    agent_id: RESOLVER_AGENT!,
+    url: game.url,
+    since: windowStart,
+  }));
+  const recheckRows = (recheck.contributions || []) as Array<{ message: string }>;
+  if (recheckRows.some(r => eventResolvesAt(r.message) === windowStart)) {
+    console.log(`[${game.name}] window since ${windowStart}: already resolved by another agent`);
+    return;
+  }
+
+  // 5. Synthesise + post
+  console.log(`[${game.name}] window since ${windowStart}: ${windowRows.length} liquid entries, contributors=${contributorIds.join(',')}`);
+
+  let synthesis: string;
+  try {
+    synthesis = await synthesise(game, windowRows, contributorIds);
+  } catch (e: any) {
+    console.error(`[${game.name}] LLM synthesis failed:`, e.message);
+    return;
+  }
+
+  const body = `[GRIT EVENT resolves=${windowStart} window=${windowSeconds}s]\n${synthesis}`;
+  const sendResult = parse(await handlePoolSend({
+    agent_id: RESOLVER_AGENT!,
+    url: game.url,
+    content: body,
+  }));
+
+  if (sendResult.contributed) {
+    console.log(`[${game.name}] ✓ event posted for window ${windowStart}`);
+  } else {
+    console.warn(`[${game.name}] event post failed:`, sendResult);
+  }
+}
+
+async function tick() {
+  for (const game of config.games) {
+    try { await tickGame(game); }
+    catch (e: any) { console.error(`[${game.name}] tick error:`, e.message); }
   }
 }
 
 async function main() {
-  console.log(`=== GRIT resolver: ${RESOLVER_AGENT} ===`);
-  console.log(`Games:`, config.games.map(g => `${g.name} @ ${g.url}`).join(', '));
+  console.log(`=== GRIT resolver (convention layer): ${RESOLVER_AGENT} ===`);
+  console.log(`Games:`, config.games.map(g => `${g.name} @ ${g.url} (window=${g.window_seconds ?? DEFAULT_WINDOW_SECONDS}s)`).join(', '));
   console.log(`Poll interval: ${POLL_INTERVAL_SECONDS}s`);
   console.log(`LLM: ${LLM_MODEL}\n`);
 
   await subscribeToGames();
 
-  // Loop
   while (true) {
     try { await tick(); }
     catch (e: any) { console.error('[tick] unhandled error:', e.message); }

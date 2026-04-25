@@ -5,7 +5,8 @@
       "url": "https://play.onen.ai/thornkeep",
       "gm_agent_id": "thornkeep-gm",
       "rules_block": "thornkeep-rules",
-      "world_block": "thornkeep-world"
+      "world_block": "thornkeep-world",
+      "window_seconds": 60
     }
   ]
 }
