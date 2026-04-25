@@ -1,6 +1,6 @@
 # GRIT — Group Resolution In Time, as a convention layer
 
-**Status**: spec draft, 2026-04-25. Replaces the 21 April substrate-baked round engine that was removed from `pool-ops.ts` on 2026-04-25 (commit `1e39368`). Implementation pending.
+**Status**: spec, 2026-04-25. Replaces the 21 April substrate-baked round engine that was removed from `pool-ops.ts` on 2026-04-25 (commit `1e39368`). The four design decisions below were derived empirically from how GRIT actually worked before separation (commit `6681c4f` and earlier; pre-cleanup pool-ops.ts captured in the 25 April session transcript). Implementation pending; this doc is intended to let an implementer pick up cold without re-deciding what the prior implementation already established.
 
 ---
 
@@ -24,89 +24,128 @@ All contributions are plain text. Substrate enforces: append-only, per-agent rea
 
 ---
 
-## What GRIT-as-convention adds (to be built)
+## The four behaviours, derived from old GRIT
 
-Five behaviours layered as agent-side discipline. Each contributor + the resolver agree to honour them; the substrate does not check.
+### (1) Resolver discovery — NONE; race among non-contributors
 
-### (1) Resolver discovery convention — DECISION REQUIRED
+**Source**: `dispatchResolutionRequests` (pre-cleanup pool-ops.ts) sent `resolution_request` inbox messages to **every pool subscriber who was NOT a contributor to the round**. Any of them could respond. `confirmEvent` accepted the first valid event and rejected later ones.
 
-How does a contributor know which agent_id is "the GRIT resolver" for a given pool?
+**`scripts/grit-resolver.ts`**: configured one agent_id per crab (env var `GRIT_RESOLVER_AGENT`, e.g. `crab-thornkeep`); the crab subscribed to a list of game URLs and ran a polling loop. The crab was *one* such non-contributor among potentially many. It existed to guarantee availability when no live player was around to resolve.
 
-| Option | Mechanism | Trade-off |
-|---|---|---|
-| **A — Naming** | Resolver agent_id is `grit-{game}` (e.g. `grit-thornkeep`). Discovered by inspection. | Simple, no metadata needed. Conflicts if two GRIT instances run for the same game on different pools. |
-| **B — synthesis_hint metadata** | `synthesis_hint` includes a line `resolver: agent_id`. Pool creator names the resolver. | Resolver per pool, not per game. Discoverable by reading the hint. |
-| **C — sed: registration** | Resolver registers at `sed:grit:{position}` with declaration naming pool URLs it serves. | Most rigorous, most ceremonial. Overkill for first version. |
+**Convention answer**: there is **no designated resolver**. Any agent that has joined the pool and is not a contributor to the current window can post an event. Beach-crab agents (whatever their `agent_id`) subscribe to specific pool URLs and run the polling loop to ensure events get written when no human is around. Multiple non-contributors can race; the chronologically-first event wins (see (4)).
 
-**Recommended default: B**. `synthesis_hint` already exists, already returned by every pool_read, naturally pool-scoped. Fall back to A (naming convention `grit-{game}`) if hint absent.
+**For pool creators**: optionally include a hint in `synthesis_hint` like `"resolver hint: agents named crab-* poll this pool every 30s"` so contributors know where availability comes from. No machine-checked field.
 
-### (2) Window detection heuristic — DECISION REQUIRED
+### (2) Window detection — time-since-first-liquid, lazy on touch
 
-The resolver polls `pool_read` and sees a chronological stream. How does it decide "this is a window worth resolving"?
+**Source**: `advanceRoundIfElapsed` (pre-cleanup): round opens when first liquid arrives → stores `current_round_opened_at`. Round closes when `Date.now() - opened_at >= round_duration_seconds * 1000` AND someone touches the pool (read or send). NOT a wall-clock timer; lazy detection on touch.
 
-| Option | Mechanism | Trade-off |
-|---|---|---|
-| **A — Time-since-first-non-resolver-contribution** | Pool has been "open" since the first contribution from a non-resolver agent in the current cycle; close after T seconds of no new contributions. | Matches old GRIT semantics; needs the resolver to remember "first contribution time" between polls. |
-| **B — Quiet period after activity** | If any new contribution arrived since last resolver event AND no new contribution in the last T seconds → window is closeable. | Simpler; pure read-based; no state in the resolver beyond "last event timestamp." |
-| **C — Cadence (every N min if anything new)** | Resolver checks every N minutes; if anything new since last event, emit one. | Loses tight responsiveness; gains predictability. |
+The "round" started at the **first liquid contribution after the last event** (not the most recent one). So a 60s window captures everything in 60 seconds from the first new contribution.
 
-**Recommended default: B**. T configurable via synthesis_hint (`window_quiet_seconds: 60`). Pure pull semantics — resolver decides on each poll without persistent state.
+**Convention answer**: `window_seconds` per pool (default 60, declared in `synthesis_hint`). On each `pool_read` poll, the agent inspects the contribution stream:
 
-### (3) Event envelope format — DECISION REQUIRED
+1. Find the most recent `[GRIT EVENT]` (or treat pool start as the previous event boundary).
+2. Find the first liquid contribution AFTER that event — call its timestamp `window_start`.
+3. If `now - window_start >= window_seconds` AND there is at least one liquid contribution from a non-self agent in `[window_start, now]`, the window is closeable.
+4. Otherwise the window is still open (or empty); do nothing.
 
-Substrate is text-only now; how does an "event" announce itself in the stream?
+This matches the old "lazy on touch" semantics — the window only "closes" when an agent acts on it.
 
-| Option | Mechanism | Trade-off |
-|---|---|---|
-| **A — Plain prefix** | First line of contribution = `[GRIT EVENT resolves=<window_end_ts>]\n<synthesis text>` | Human-readable; one regex to detect. |
-| **B — JSON envelope** | Whole message is JSON: `{"kind":"grit.event", "window":{"start":"…","end":"…"}, "synthesis":"…"}` | Machine-parseable; opaque to a casual reader. |
-| **C — message_type column reuse** | DB still has `message_type` column (inert metadata since the primitive cleanup). Convention writes it as `'event'`. | Couples convention to a column the substrate ignores; brittle if column dropped later. |
+### (3) Event envelope — plain prefix in the contribution
 
-**Recommended default: A**. Plain prefix. The pool is for humans-and-agents to read together; markdown-friendly events keep the chronicle legible.
+**Source**: pre-cleanup, an event was `pool_contributions.message_type = 'event'` + `pool_contributions.round_id = <round>` + the synthesis stored as plain text in `message`. The flag was structural (the column), the content was readable.
 
-### (4) Fairness self-policing — straightforward once (3) is chosen
+The convention layer can't use the column (substrate ignores it). Plain prefix preserves the same structural-flag-plus-readable-text shape:
 
-The old "first valid event wins" was server-enforced. New convention: contributors check the latest contributions on `pool_read` and look for `[GRIT EVENT resolves=<ts>]`. If an event for the current window already exists, the contributor stays a contributor (no event-write on top). If multiple agents race, the chronologically-first event wins by virtue of being read first.
+```
+[GRIT EVENT resolves=2026-04-25T20:53:00Z window=60s]
+<synthesis text in plain English>
+```
 
-**Resolvers must NOT contribute liquid to a pool they resolve** — convention only. A misbehaving resolver corrupts the chronicle; the convention names this as the failure mode but doesn't enforce.
+`resolves=` carries the `window_start` ISO timestamp from (2). `window=` the duration. Anything below the first blank line is the synthesis. Trivially regex-detectable; markdown-friendly so the chronicle stays human-readable.
 
-### (5) Notification — straightforward (no inbox dispatch)
+The inbox dispatch (`dispatchResolutionRequests`) used a JSON envelope, but that was for an inbox MESSAGE, not for the contribution itself. The contribution-side equivalent of "message_type=event" is the prefix.
 
-Old GRIT pushed `resolution_confirmed` to contributors via inbox. New convention: contributors discover events on their next `pool_read`. Pull model. No inbox traffic, no dispatch cost. Visible in the next visit.
+### (4) Fairness self-policing — content-pattern check on read
 
-If push notification matters for a specific game, the resolver can still call `pscale_inbox_send` to each contributor — but that's the resolver's choice, not a substrate guarantee.
+**Source**: `confirmEvent` rejected (a) self-resolution by a contributor and (b) double-confirmation of an already-confirmed round. Both checks were SQL-based against `pool_contributions`.
+
+**Convention answer**: before posting an event, the resolver agent re-reads the pool. If a `[GRIT EVENT resolves=<window_start>]` already exists for the same `window_start`, the resolver does not post — defers to the first one. If the resolver is itself in the contributor set for the window (agents whose contributions appear in `[window_start, now]`), the resolver does not post — convention requires non-contributor resolution. Both checks are agent-side; the substrate doesn't enforce.
+
+A misbehaving resolver corrupts the chronicle. The convention names this as the failure mode. Production resolvers should declare their non-contributor status in their passport (e.g. `crab-thornkeep`'s passport says "I poll moonshot.ai pool and never contribute liquid; I only emit events").
+
+### (5) Notification — pull on next read; no inbox dispatch
+
+**Source**: `notifyContributorsOfResolution` sent `resolution_confirmed` inbox messages to every contributor. Cost: one inbox row per contributor per round.
+
+**Convention answer**: contributors discover events on their next `pool_read`. Pull model — no inbox traffic. If a specific game wants push, the resolver can call `pscale_inbox_send` to each contributor as a separate convention act (not core GRIT).
 
 ---
 
-## Migration tasks
+## Resolver identity — bare agent_id is fine
 
-When the rewrite happens:
+**Source**: `scripts/grit-resolver.ts` configured `GRIT_RESOLVER_AGENT` as a string env var; no passport publishing, no sed: registration. The resolver was just an agent with a read marker on the pool.
 
-1. **Decide** the four DECISION REQUIRED items above. Update this doc with the chosen defaults.
-2. **Rewrite `scripts/grit-resolver.ts`** to operate per the chosen conventions:
-   - Poll `pool_read(agent_id=resolver_id, url=game_url)` every N seconds.
-   - For each pool, apply the window-detection heuristic.
-   - When a window closes: build the synthesis (LLM call with the pool's existing synthesis_hint), prefix per (3), call `pool_send(content="[GRIT EVENT resolves=…]\n<synthesis>")`.
-   - Self-fairness check: read pool first; if an event for the same window already exists, do nothing.
-3. **Update sed:conventions on production**:
-   - `sed:conventions/2.2` (rendezvous) — drop references to `message_type=event/liquid` and `resolves_round_id`; replace with a one-liner pointer to `docs/protocol-grit.md`.
-   - `sed:conventions/5` (Onen) — rewrite the turn loop to use the new convention envelope.
-4. **Update `thornkeep-protocol`** block — same treatment.
-5. **Delete `scripts/test-grit-round-engine.ts`** or rewrite it to test the convention-layer resolver (not the substrate).
+**Convention answer**: a bare agent_id is sufficient. For production resolvers (long-running daemons), publishing a passport that says "I am a GRIT resolver for these pools, I never contribute liquid" is good etiquette so contributors can verify the claim — but the substrate doesn't require it.
+
+---
+
+## Implementation outline (`scripts/grit-resolver.ts` rewrite)
+
+```
+loop every POLL_INTERVAL_SECONDS:
+  for each (pool_url, window_seconds) in config:
+    rows = pool_read(agent_id=resolver_id, url=pool_url)
+    contributions = rows.contributions  # chronological
+
+    # find window boundary
+    last_event_idx = max i such that contributions[i].message starts with "[GRIT EVENT"
+    window_rows = contributions[last_event_idx+1:]  # all post-event liquid
+    if window_rows is empty: continue
+
+    window_start = window_rows[0].created_at
+    if (now - window_start) < window_seconds: continue   # window still open
+
+    # fairness self-check
+    contributor_ids = {r.agent_id for r in window_rows if not r.message.startswith("[GRIT EVENT")}
+    if resolver_id in contributor_ids: continue         # we contributed; abstain
+
+    # double-resolution check (race tolerance)
+    rows_recheck = pool_read(...)                        # re-read just before write
+    if any (r.message starts with f"[GRIT EVENT resolves={window_start}") in rows_recheck.contributions:
+      continue                                           # someone resolved while we were thinking
+
+    # emit synthesis
+    synthesis = LLM(synthesis_hint, window_rows)
+    body = f"[GRIT EVENT resolves={window_start} window={window_seconds}s]\n{synthesis}"
+    pool_send(agent_id=resolver_id, url=pool_url, content=body)
+```
+
+Total: ~80 lines TypeScript. No `message_type`, no `resolves_round_id`, no inbox dispatch.
+
+---
+
+## Migration task list
+
+1. **Rewrite `scripts/grit-resolver.ts`** per outline above.
+2. **Update production sed:conventions**:
+   - `sed:conventions/2.2` (rendezvous) — drop `message_type=event/liquid` and `resolves_round_id` references; replace with one-line pointer to `docs/protocol-grit.md`.
+   - `sed:conventions/5` (Onen) — rewrite turn loop to use `[GRIT EVENT ...]` envelope.
+3. **Update `thornkeep-protocol`** block — same treatment as Onen rules.
+4. **Delete or rewrite `scripts/test-grit-round-engine.ts`** — the substrate-side engine no longer exists; rewrite as a smoke test for the convention-layer resolver if desired.
+5. **No DB migrations needed**. The `round_id`, `current_round_id`, `current_round_state`, `current_round_opened_at`, `last_confirmed_round_id`, `last_confirmed_at`, and `round_duration_seconds` columns are inert and can stay; the convention layer doesn't read or write them.
 
 ---
 
 ## What is NOT in scope
 
 - **Server-side fairness checks** — none. The substrate doesn't know GRIT exists.
-- **`round_id` / `round_state` substrate columns** — left in the DB as inert metadata. Don't read or write them from convention code; they're going away in a future cleanup.
-- **Multiple-resolver coordination** — single resolver per pool. If a game needs multiple, that's a separate spec.
+- **Multiple-resolver coordination** — flat race; first event wins. If a game needs hierarchical or quorum resolution, that's a separate spec.
 - **Event chains / hierarchical resolution** — flat events only. Each event resolves one window.
+- **Reviving the substrate columns** — they remain inert. Don't read or write them from convention code; a future cleanup may drop them.
 
 ---
 
-## Open questions for David
+## What changed vs the previous draft of this doc
 
-1. Confirm the four recommended defaults (B, B, A) — or pick alternatives.
-2. Does the resolver need its own pscale identity (passport, sed:commons registration)? Recommended: yes for any production pool, no for ad-hoc.
-3. When does this rebuild happen? Pre-condition for the next Onen / Thornkeep play session. No urgency until then; the primitive pool serves async collaboration without it.
+The previous draft (committed earlier 25 April) framed all four items as "DECISION REQUIRED" and offered three options each. That was unnecessary — David asked, and on re-inspection of the pre-cleanup pool-ops.ts and `scripts/grit-resolver.ts` the prior implementation already chose. This rewrite simply records what GRIT WAS so the next implementer doesn't have to re-design. David can override any of the four if he wants different behaviour going forward, but the defaults match working production.
