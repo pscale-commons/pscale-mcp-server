@@ -1,5 +1,10 @@
 #!/usr/bin/env tsx
 /**
+ * **OBSOLETE as of 2026-04-25 GRIT decoupling**: tests the server-side round
+ * engine that was stripped from pool-ops.ts. Kept as a historical record of
+ * the GRIT semantics; will fail against the current substrate. When GRIT is
+ * rebuilt as a convention layer, replace this with a test of that.
+ *
  * Smoke test for the GRIT round engine.
  *
  * Scenario:

@@ -1,5 +1,13 @@
 #!/usr/bin/env tsx
 /**
+ * **BROKEN as of 2026-04-25 GRIT decoupling**: this script depends on
+ * server-side round_engine machinery (resolution_request inbox dispatch,
+ * pool_send message_type=event, resolves_round_id) that was removed when
+ * pool-ops.ts was returned to its primitive shape. GRIT now needs to live
+ * as a pure convention layer on top of the primitive pool: poll pool_read,
+ * detect time windows yourself, post synthesis as a normal liquid
+ * contribution. Rewrite when the next Onen/Thornkeep play session is set up.
+ *
  * GRIT beach-crab resolver — an always-on non-contributor that resolves
  * rounds for a beach-game when live human players aren't available.
  *
