@@ -5,6 +5,7 @@ import { getClient } from '../db.js';
 import { hashUrl } from '../url.js';
 
 const DEFAULT_TTL_DAYS = 30;
+const READ_PAGE_LIMIT = 200;
 
 const DEFAULT_SYNTHESIS_HINT = `Synthesize the contributions through your own purpose.
 Each visitor reads the same liquid stream and produces their own synthesis — there is no central resolver.
@@ -84,7 +85,14 @@ async function updateReadMarker(pool_id: string, agent_id: string) {
     .upsert({ pool_id, agent_id, last_read_at: new Date().toISOString() });
 }
 
-async function getContributionsSince(pool_id: string, since: string | null) {
+async function setReadMarker(pool_id: string, agent_id: string, when: string) {
+  const client = getClient();
+  await client
+    .from('pool_read_markers')
+    .upsert({ pool_id, agent_id, last_read_at: when });
+}
+
+async function getContributionsSince(pool_id: string, since: string | null, limit?: number) {
   const client = getClient();
   let query = client
     .from('pool_contributions')
@@ -92,6 +100,7 @@ async function getContributionsSince(pool_id: string, since: string | null) {
     .eq('pool_id', pool_id)
     .order('created_at', { ascending: true });
   if (since) query = query.gt('created_at', since);
+  if (limit && limit > 0) query = query.limit(limit);
   const { data } = await query;
   return (data || []) as any[];
 }
@@ -144,10 +153,15 @@ export async function handlePoolJoin({
     url_hash: pool.url_hash, pool_id: pool.pool_id, agent_id,
     message: purpose || 'joined the pool', message_type: 'join',
   });
-  await updateReadMarker(pool.pool_id, agent_id);
 
-  const contributions = await getContributionsSince(pool.pool_id, null);
+  // Cap join response to the most recent page; marker advances past those
+  const contributions = await getContributionsSince(pool.pool_id, null, READ_PAGE_LIMIT);
   const contributors = await getContributors(pool.pool_id);
+  const newMarker = contributions.length > 0
+    ? contributions[contributions.length - 1].created_at
+    : new Date().toISOString();
+  await setReadMarker(pool.pool_id, agent_id, newMarker);
+  const more_available = contributions.length === READ_PAGE_LIMIT;
 
   return {
     content: [{
@@ -160,6 +174,9 @@ export async function handlePoolJoin({
         ttl_days: pool.ttl_days,
         contributors,
         contributions,
+        new_marker: newMarker,
+        contribution_count: contributions.length,
+        more_available,
       }, null, 2),
     }],
   };
@@ -185,8 +202,13 @@ export async function handlePoolSend({
     message: content, message_type: 'liquid',
   });
 
-  const new_contributions = await getContributionsSince(pool.pool_id, previousMarker);
-  await updateReadMarker(pool.pool_id, agent_id);
+  // Cap the catch-up payload; marker advances to the newest returned (or "now" if nothing)
+  const new_contributions = await getContributionsSince(pool.pool_id, previousMarker, READ_PAGE_LIMIT);
+  const newMarker = new_contributions.length > 0
+    ? new_contributions[new_contributions.length - 1].created_at
+    : new Date().toISOString();
+  await setReadMarker(pool.pool_id, agent_id, newMarker);
+  const more_available = new_contributions.length === READ_PAGE_LIMIT;
 
   return {
     content: [{
@@ -197,8 +219,9 @@ export async function handlePoolSend({
         synthesis_hint: pool.synthesis_hint,
         new_contributions,
         previous_marker: previousMarker,
-        new_marker: new Date().toISOString(),
+        new_marker: newMarker,
         nothing_new: new_contributions.length === 0,
+        more_available,
       }, null, 2),
     }],
   };
@@ -217,9 +240,14 @@ export async function handlePoolRead({
     };
   }
   const previousMarker = since || await getReadMarker(pool.pool_id, agent_id);
-  const contributions = await getContributionsSince(pool.pool_id, previousMarker);
-  await updateReadMarker(pool.pool_id, agent_id);
-  const newMarker = new Date().toISOString();
+  const contributions = await getContributionsSince(pool.pool_id, previousMarker, READ_PAGE_LIMIT);
+  // Marker advances to the newest contribution returned, NOT to "now" — so a capped
+  // read paginates naturally on the next call without losing the unread tail.
+  const newMarker = contributions.length > 0
+    ? contributions[contributions.length - 1].created_at
+    : new Date().toISOString();
+  await setReadMarker(pool.pool_id, agent_id, newMarker);
+  const more_available = contributions.length === READ_PAGE_LIMIT;
 
   return {
     content: [{
@@ -233,6 +261,7 @@ export async function handlePoolRead({
         new_marker: newMarker,
         contribution_count: contributions.length,
         nothing_new: contributions.length === 0,
+        more_available,
       }, null, 2),
     }],
   };
@@ -267,7 +296,7 @@ export function registerPoolOps(server: McpServer) {
 
   server.tool(
     'pscale_pool_read',
-    'Read all contributions made to the pool since your last visit. Returns the chronological stream newer than your stored read marker (overridable via `since`). Your read marker is updated to "now" on this call; next read returns only what is newer than this one. Your LLM synthesises the stream in your own context with your own purpose — the substrate provides NO synthesis and dispatches NO resolution requests.',
+    'Read contributions made to the pool since your last visit. Returns up to 200 contributions newer than your stored read marker (overridable via `since`), oldest-first. Your read marker advances to the newest contribution returned (NOT to "now") so capped reads paginate naturally — call again to fetch the next page; `more_available:true` means there is more. Your LLM synthesises the stream in your own context with your own purpose — the substrate provides NO synthesis and dispatches NO resolution requests.',
     {
       agent_id: z.string().describe('Your agent identifier'),
       url: z.string().describe('The URL to check for an active pool'),
