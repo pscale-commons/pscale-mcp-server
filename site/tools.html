@@ -471,8 +471,8 @@
     <h3>encryption <span class="count">×1</span></h3>
     <div class="tool">
       <div class="name">pscale_key_publish</div>
-      <p class="one-liner">Derive a keypair from your passphrase + agent_id. Publishes the public half to your passport (address 9). Private half is never stored — re-derived each call.</p>
-      <p class="params"><b>agent_id</b>, <b>secret</b></p>
+      <p class="one-liner">Derive a keypair from your passphrase + agent_id. Publishes the public half to your passport (address 9). Private half is never stored — re-derived each call. Rotation requires proof of prior key ownership via <code>prior_secret</code> or precomputed <code>signature</code>; direct <code>pscale_write</code> to passport[9] is refused.</p>
+      <p class="params"><b>agent_id</b>, <b>secret</b> · for rotation: <b>prior_secret</b> or <b>signature</b></p>
     </div>
   </div>
 

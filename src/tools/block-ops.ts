@@ -75,6 +75,23 @@ export async function handleWrite(
     };
   }
 
+  // Position 9 of a passport block holds cryptographic public keys (the
+  // gray-encryption gate). The wiki philosophy applies to descriptive content
+  // (offers, needs, lineage, narrative) but NOT to crypto material — anyone
+  // overwriting position 9 with their own key intercepts gray-encrypted
+  // inbound until the legitimate owner re-publishes. pscale_key_publish has
+  // a rotation-signature gate; pscale_write does not, so route callers there.
+  if (name === 'passport' && (address === '9' || address.startsWith('9.'))) {
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: 'Position 9 of a passport is reserved for cryptographic public keys. Direct writes are refused; use pscale_key_publish (which enforces a rotation-signature gate) to publish or rotate keys.',
+        },
+      ],
+    };
+  }
+
   const block = row.block as Block;
   const writeAddress = address === '0' ? '_' : address;
 

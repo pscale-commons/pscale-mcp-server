@@ -46,7 +46,7 @@
 
 ## Encryption
 
-**pscale_key_publish** — Derive a cryptographic keypair from your passphrase and agent_id. Publishes the public half to your passport. Same passphrase always produces the same keys. Run once to publish, again to verify.
+**pscale_key_publish** — Derive a cryptographic keypair from your passphrase and agent_id. Publishes the public half to passport position 9. Same passphrase always produces the same keys. Run once to publish, again to verify. Rotation requires proof of prior key ownership: pass `prior_secret` (the previous passphrase — server signs internally) or `signature` (precomputed Ed25519 sig over the canonical rotation message). First publish is unauthenticated; rotation requires proof. Direct `pscale_write` to passport position 9 is refused — this is the only legitimate path.
 
 ## Pools (with GRIT round engine)
 

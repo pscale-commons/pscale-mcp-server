@@ -110,6 +110,51 @@ export function keysMatch(
   return a.x25519 === b.x25519 && a.ed25519 === b.ed25519;
 }
 
+// ── Key rotation signing (proof-of-prior-key for passport position 9) ──
+
+/**
+ * Canonical message for a key rotation. Binds the agent_id and the new
+ * public keys together so the signature commits to a specific rotation.
+ * Replay-safe: the only state an attacker could rewind to is one the
+ * legitimate owner had previously authorised, which is recovery, not attack.
+ */
+export function keyRotationMessage(
+  agentId: string,
+  newPubKeys: { x25519: string; ed25519: string },
+): Uint8Array {
+  return encoder.encode(
+    `pscale_key_rotation:${agentId}:${newPubKeys.x25519}:${newPubKeys.ed25519}`,
+  );
+}
+
+/** Sign a key rotation with the prior Ed25519 secret key. Returns base64. */
+export function signKeyRotation(
+  agentId: string,
+  newPubKeys: { x25519: string; ed25519: string },
+  priorEd25519SecretKey: Uint8Array,
+): string {
+  const msg = keyRotationMessage(agentId, newPubKeys);
+  const sig = nacl.sign.detached(msg, priorEd25519SecretKey);
+  return toBase64(sig);
+}
+
+/** Verify a base64 rotation signature against the prior Ed25519 public key. */
+export function verifyKeyRotation(
+  agentId: string,
+  newPubKeys: { x25519: string; ed25519: string },
+  signatureBase64: string,
+  priorEd25519PublicKeyBase64: string,
+): boolean {
+  try {
+    const msg = keyRotationMessage(agentId, newPubKeys);
+    const sig = fromBase64(signatureBase64);
+    const pub = fromBase64(priorEd25519PublicKeyBase64);
+    return nacl.sign.detached.verify(msg, sig, pub);
+  } catch {
+    return false;
+  }
+}
+
 // ── Bilateral encryption (for inbox: sender → recipient) ──
 
 /**
