@@ -900,12 +900,12 @@ The substrate is now the right shape (primitive). GRIT lives as a **convention l
 
 [scripts/test-grit-round-engine.ts](scripts/test-grit-round-engine.ts) is obsolete (the substrate engine it tested no longer exists); kept as historical reference. Could be rewritten as a convention-layer smoke test if needed.
 
-**What still needs doing for live use** (deferred until next Thornkeep / Onen session):
-- Update production sed: conventions: `sed:conventions/2.2` (rendezvous) drop `message_type=event/resolves_round_id` references, point at protocol-grit.md; `sed:conventions/5` (Onen) rewrite turn loop in the new envelope.
-- Update `thornkeep-protocol` block to match.
-- First live smoke test against an actual Onen pool — set `GRIT_RESOLVER_AGENT=crab-thornkeep`, `GRIT_GAMES_CONFIG=games.json` per the example, run `npx tsx scripts/grit-resolver.ts`.
+**Production conventions and thornkeep-protocol updated 2026-04-25**:
+- `sed:conventions/5` (Onen / GRIT framework) — 5.0 underscore, 5.2.0 turn underscore, 5.2.1 turn loop, 5.2.2 fairness, 5.2.3 chronicle all rewritten. Old `message_type=event/resolves_round_id` references gone. Updated with passphrase `ubarakar142` (games category lock).
+- `sed:conventions/2.2.1` (pool-invite envelope) — left as-is. The `round_duration_seconds` field is now inert metadata, but the envelope still routes agents to the same pool. Rename to `window_seconds` is a future cleanup if it causes confusion.
+- `thornkeep-gm/thornkeep-protocol` — v0.4 → v0.5. Underscore + positions 2 (ON USER INPUT), 3 (ON TURN), 4 (was ROUND ENGINE REFERENCE; now CONVENTION LAYER REFERENCE) all rewritten. Positions 1 (ON JOIN v0.4.1), 5 (RESUMING), 6 (PRIVACY) preserved unchanged. Written under thornkeep-gm agent_id (open-beta RLS allows; David is the GM).
 
-The cleanest moment to do all three is when someone (Loom?) stages the next Thornkeep session, since that gives the conventions a concrete game to point at and the resolver real liquid to synthesise.
+**Only outstanding GRIT item for live use**: first smoke test against an actual game pool — set `GRIT_RESOLVER_AGENT=crab-thornkeep`, `GRIT_GAMES_CONFIG=games.json` per `scripts/grit-games.example.json`, run `npx tsx scripts/grit-resolver.ts`. Validates that the polling resolver correctly detects windows, runs synthesis, and posts events that contributors discover on their next pool_read.
 
 ### Files changed
 - [src/tools/pool-ops.ts](src/tools/pool-ops.ts) — primitive rewrite + page cap + legacy hash fallback
