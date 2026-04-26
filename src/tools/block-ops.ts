@@ -64,6 +64,42 @@ export function verifyOrdinaryBlockWrite(
   return { allowed: true, locked: true };
 }
 
+/**
+ * Identity-lock check for bare agent_ids (non-sed:, non-grain:).
+ *
+ * The agent's PASSPORT block is the canonical identity assertion. If the
+ * passport is locked (position_hashes['_'] set), every "post-as-me" action
+ * (pool_send, pool_join, etc.) must prove ownership of the lock. If the
+ * passport is unlocked or absent, no check — open behaviour preserved.
+ *
+ * Skips structured addresses (sed:, grain:) — those have their own ownership
+ * dispatchers (verifySedOwnership, verifyGrainOwnership) and are checked
+ * upstream by callers that handle them.
+ *
+ * Returns {allowed: true, locked: false} when no gate applies.
+ * Returns {allowed: true, locked: true} when secret verifies.
+ * Returns {allowed: false, locked: true, error} when gate applies and check fails.
+ */
+export async function verifyBareAgentIdentity(
+  agentId: string,
+  secret: string | undefined,
+): Promise<{ allowed: boolean; locked: boolean; error?: string }> {
+  if (agentId.startsWith('sed:') || agentId.startsWith('grain:')) {
+    return { allowed: true, locked: false };
+  }
+  const row = await getBlock(agentId, 'passport');
+  if (!row) return { allowed: true, locked: false };
+  const check = verifyOrdinaryBlockWrite(row.position_hashes, agentId, 'passport', secret);
+  if (!check.allowed && check.error) {
+    // Re-frame so the caller sees identity-lock semantics, not block-lock.
+    const friendlier = check.error.includes('incorrect')
+      ? `Identity check failed for "${agentId}" — incorrect secret.`
+      : `Agent "${agentId}" has a locked passport. Provide secret to post under this identity.`;
+    return { allowed: false, locked: true, error: friendlier };
+  }
+  return check;
+}
+
 // ── Exported handler functions (used by kernel + legacy registration) ──
 
 export async function handleCreateBlock(
