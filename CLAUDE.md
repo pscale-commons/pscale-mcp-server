@@ -39,7 +39,7 @@ Connect config (remote — via Railway, for convenience):
 {
   "pscale": {
     "command": "npx",
-    "args": ["-y", "mcp-remote", "https://pscale-mcp-server-production.up.railway.app/mcp/v2"]
+    "args": ["-y", "mcp-remote@0.1.38", "https://pscale-mcp-server-production.up.railway.app/mcp/v2"]
   }
 }
 ```
