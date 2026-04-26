@@ -133,7 +133,7 @@ Total: ~80 lines TypeScript. No `message_type`, no `resolves_round_id`, no inbox
    - `sed:conventions/5` (Onen) — rewrite turn loop to use `[GRIT EVENT ...]` envelope.
 3. **Update `thornkeep-protocol`** block — same treatment as Onen rules.
 4. **Delete or rewrite `scripts/test-grit-round-engine.ts`** — the substrate-side engine no longer exists; rewrite as a smoke test for the convention-layer resolver if desired.
-5. **No DB migrations needed**. The `round_id`, `current_round_id`, `current_round_state`, `current_round_opened_at`, `last_confirmed_round_id`, `last_confirmed_at`, and `round_duration_seconds` columns are inert and can stay; the convention layer doesn't read or write them.
+5. **DB cleanup landed 2026-04-26** (`supabase/migrations/20260426201446_drop_grit_substrate_columns.sql`). The inert substrate columns (`round_id`, `current_round_id`, `current_round_state`, `current_round_opened_at`, `last_confirmed_round_id`, `last_confirmed_at`, `round_duration_seconds`, `last_compression_at`) are dropped. The `valid_message_type` constraint is rebuilt without `event`, `contribution`, `observation`. Five historical 'event' chronicle rows (April 21-25 sessions) flipped to `liquid`; their content is untouched.
 
 ---
 
