@@ -1024,3 +1024,54 @@ The original spec is at `/Users/davidpinto/Downloads/pscale-mcp-server-spec.md`.
 **`sand_passports` table**: Still in Supabase, no longer referenced by any code. Can be dropped when convenient. Passport block structure: `_ = description, 1 = offers, 2 = needs, 3 = lineage, 9 = { x25519, ed25519 }`.
 
 **The lesson**: When the data model evolves, kill the old table. Don't dual-write. Every dual-write is a drift bug waiting to confuse the next agent.
+
+## The 26 April 2026 session — sovereign shells via ordinary-block write-lock
+
+**Context**: David framed the substrate question — does an agent's "shell" need a new primitive on the beach? Audit found the real gap: **ordinary blocks have no write-auth at all**. Anyone could call `pscale_write(agent_id='weft', name='purpose', ...)` and clobber Weft's purpose because `position_hashes` was empty for every agent shell. sed:/grain: had ownership gates; ordinary blocks didn't. Gray encryption (per-leaf) was used on only 5 of ~28 ordinary shell blocks; structure was always public; writes were always open. The 23 April scope doc proposed Ed25519 signed-writes as the systemic answer; David asked instead to extend the existing sed:/grain: `secret` lock pattern to ordinary blocks — same primitive, broader application.
+
+**What was built**:
+- `src/tools/block-ops.ts` — `hashBlockPassphrase(passphrase, agent_id, name, position)` (SHA-256, salt namespace `block:{agent_id}:{name}:{position}`, distinct from sed: and grain: salts so the same passphrase never collides across substrates). `verifyOrdinaryBlockWrite()` returns `{allowed, locked, error?}`.
+- `pscale_create_block` — optional `secret` parameter. When provided, hashes and stores at `position_hashes['_']` immediately after block creation. Rejects reserved `sed:`/`grain:` prefixes on agent_id and name.
+- `pscale_lock_block` — **NEW (25th tool)**. Retroactively locks an existing ordinary block, or rotates the lock via `current_secret`. Refuses to operate on sed:/grain: blocks (those have their own lifecycle tools).
+- `pscale_write` — for ordinary blocks, checks `position_hashes['_']` lock; secret is the lock proof; content is stored **plaintext** (so visitors can read). On unlocked ordinary blocks, the legacy `secret = self-encryption` behaviour is preserved unchanged. Tool description rewritten to make the four substrate regimes (sed:, grain:, ordinary-locked, ordinary-unlocked) explicit and uniform: `secret` is the write-lock proof everywhere; gray encryption is the privacy primitive on top.
+
+**Use case shaping the design — born-into vs visiting**:
+- **Born-into** (an LLM wakes as Weft / Keel / etc.): needs WRITE access to update its shell at end-of-cycle (PCT-soliton future phase: "set the addresses for next instance"). Lock with secret in the agent's wake credentials. Reads stay public so the next instance — and any visitor — can compose the body without arguing over keys.
+- **Visiting** (Claude lands on `agent_id='happyseaurchin'`): needs READ. Convention: walk `name='shell'` in star mode, follow the manifest's hidden directory positions to discover what's public (passport, offers) vs what's gray-encrypted (private memory). No new tool — `pscale_walk` star mode already does this.
+
+**Why public-readable + auth-write is the right default**: shells need to be findable. A purpose nobody can read is no signal. A purpose anyone can rewrite is no identity. The lock without read-encryption gives sovereignty in writing while keeping the agent legible on the beach. Privacy stacks separately via gray encryption when needed.
+
+**Smoke test** ([scripts/test-block-lock.ts](scripts/test-block-lock.ts), 16 assertions, all green against live Supabase):
+- Unlocked block: write without secret succeeds (legacy preserved)
+- Locked block: write without secret rejected; wrong secret rejected; correct secret writes plaintext
+- Public read on locked block returns plaintext (lock is write-only, not read-only)
+- `pscale_lock_block` retroactively applies a lock; subsequent writes need secret
+- Rotation: refused without `current_secret`; refused with wrong `current_secret`; succeeds with correct one; old secret stops working
+
+**Storage taxonomy clarified** (from David's framing earlier in session): four shell-storage locations, cost follows host.
+1. **Commons beach** — Supabase relay, David pays. Bootstrap. Now sovereign-writable via `pscale_lock_block`.
+2. **Private beach** — `.well-known/pscale-beach` on someone's site, they pay. Federated scaling path. Same protocol, host-enforced.
+3. **App-shell** — inside an LLM client (Claude project files, MCP config). User's app subscription pays.
+4. **Local-shell** — filesystem on user's machine, they pay in disk. The `target` parameter on block tools is the seam to switch.
+
+**Key insight on "shell"**: the shell is **not a new primitive**. It is a convention over existing primitives — a set of named blocks under one agent_id, optionally with one designated as `name='shell'` whose hidden directory enumerates the others. Star walk already composes them. The hermitcrab/MAGI wake loop (present orientation → past action review → future address-setting) is a star walk through this manifest. No bespoke shell tool needed.
+
+**Files changed**:
+- [src/tools/block-ops.ts](src/tools/block-ops.ts) — new helpers, new `handleLockBlock`, write-lock check in `handleWrite`, new `pscale_lock_block` tool registration, updated descriptions for `pscale_create_block` and `pscale_write`
+- [scripts/test-block-lock.ts](scripts/test-block-lock.ts) — new smoke test (16 assertions)
+
+**Doc-sync remaining** (project convention checklist, not yet applied):
+- [docs/tools.md](docs/tools.md) — bump tool count 24 → 25, add `pscale_lock_block` entry, note `secret` semantics on `pscale_create_block`
+- [site/tools.html](site/tools.html) — same
+- [site/state.json](site/state.json) — status pill if applicable
+- Tool-count headers earlier in this CLAUDE.md (24 → 25 in three places: lines ~848, ~919, ~926)
+
+**25 tools total**: 4 block (create, **lock**, write, walk) + 3 memory + 2 identity + 4 discovery + 1 invite + 1 network + 1 crypto + 3 pool + 2 collective + 1 verify + 1 grain + 1 search + 1 evolution.
+
+**What's NOT done (deliberately)**:
+- Per-position locks within an ordinary block (sed: pattern). Whole-block lock is enough for sovereign shells in V1.
+- Whole-block gray encryption (encrypt the entire JSON, not just leaves). Structure leakage is acceptable while shells are still being normalised; revisit if structural metadata becomes sensitive.
+- `target` extension to `.well-known/pscale-beach` as a blocks endpoint (federated scaling). Protocol doc exists; route doesn't. Next priority for cost distribution.
+- Ed25519 signed-writes from the 23 April scope doc. The lock primitive solves the immediate write-auth gap; signed-writes is a separate, layered primitive (per-write provenance vs per-block ownership) and remains future work if/when needed.
+
+**Existing shells unaffected**: all current weft/tuichan/keel/happyseaurchin blocks have empty `position_hashes` and remain unlocked. Owners can choose to lock them with `pscale_lock_block` when ready. Backward-compatible by construction.

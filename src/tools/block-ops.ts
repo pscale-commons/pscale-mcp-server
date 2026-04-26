@@ -1,27 +1,96 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import { createHash } from 'node:crypto';
 import { bsp, writeAt, fmtResult, fmtDir, type Block, type BspResult } from '../bsp.js';
-import { getBlock, upsertBlock, listBlocks, setTarget } from '../db.js';
+import { getBlock, upsertBlock, listBlocks, setTarget, updatePositionHashes } from '../db.js';
 import { selfEncrypt, decryptBlockNodes } from '../crypto.js';
 import { verifySedWrite } from './collective-ops.js';
 
 const TARGET_DESC = 'Storage target. Filesystem path for local storage, or "supabase" for the relay. Sticky — once set, persists for the session until changed.';
 
+// ── Ordinary-block write-lock (parallel to sed:/grain: substrates) ──
+//
+// An ordinary block becomes write-locked when position_hashes contains a
+// whole-block marker at key '_'. The marker is the SHA-256 of:
+//   passphrase + "block:" + agent_id + ":" + name + ":_"
+// Distinct salt namespace from sed: ("collective+position") and grain:
+// ("grain:pair_id:side"), so the same passphrase never produces collisions
+// across substrates.
+//
+// Per-position locks within an ordinary block are not enforced in V1 —
+// the whole-block lock is sufficient for shell sovereignty. If finer-grained
+// locking becomes useful, the sed: per-position pattern is the template.
+
+export function hashBlockPassphrase(
+  passphrase: string,
+  agentId: string,
+  name: string,
+  position: string,
+): string {
+  const data = passphrase + 'block:' + agentId + ':' + name + ':' + position;
+  return createHash('sha256').update(data).digest('hex');
+}
+
+/**
+ * Verify the write-lock on an ordinary (non-sed, non-grain) block.
+ *
+ *   - Block has no whole-block lock → write allowed (unlocked).
+ *   - Block has a whole-block lock at position_hashes['_'] → secret required
+ *     and must hash to the stored value.
+ */
+export function verifyOrdinaryBlockWrite(
+  positionHashes: Record<string, string> | undefined,
+  agentId: string,
+  name: string,
+  secret: string | undefined,
+): { allowed: boolean; locked: boolean; error?: string } {
+  const storedHash = positionHashes?.['_'];
+  if (!storedHash) return { allowed: true, locked: false };
+  if (!secret) {
+    return {
+      allowed: false,
+      locked: true,
+      error: `Block "${name}" is write-locked. Provide secret to write.`,
+    };
+  }
+  const computed = hashBlockPassphrase(secret, agentId, name, '_');
+  if (computed !== storedHash) {
+    return {
+      allowed: false,
+      locked: true,
+      error: `Write denied — incorrect secret for block "${name}".`,
+    };
+  }
+  return { allowed: true, locked: true };
+}
+
 // ── Exported handler functions (used by kernel + legacy registration) ──
 
 export async function handleCreateBlock(
-  { agent_id, name, initial_content, block_type, target }: {
-    agent_id: string; name: string; initial_content?: string; block_type?: string; target?: string;
+  { agent_id, name, initial_content, block_type, secret, target }: {
+    agent_id: string; name: string; initial_content?: string; block_type?: string; secret?: string; target?: string;
   },
 ) {
   if (target) setTarget(target);
+
+  // Reject reserved-prefix names — sed:/grain: have their own lifecycle tools.
+  if (agent_id.startsWith('sed:') || agent_id.startsWith('grain:') ||
+      name.startsWith('sed:') || name.startsWith('grain:')) {
+    return {
+      content: [{
+        type: 'text' as const,
+        text: `Block names and agent_ids with prefixes "sed:" or "grain:" are reserved. Use pscale_create_collective or pscale_grain_reach instead.`,
+      }],
+    };
+  }
+
   const existing = await getBlock(agent_id, name);
   if (existing) {
     return {
       content: [
         {
           type: 'text' as const,
-          text: `Block "${name}" already exists for ${agent_id}. Use pscale_write to modify it, or pscale_walk to navigate it.`,
+          text: `Block "${name}" already exists for ${agent_id}. Use pscale_write to modify it, or pscale_walk to navigate it. To lock an existing block, use pscale_lock_block.`,
         },
       ],
     };
@@ -30,13 +99,76 @@ export async function handleCreateBlock(
   const block: Block = { _: initial_content || '' };
   await upsertBlock(agent_id, name, block_type || 'general', block);
 
+  // Optional whole-block write-lock: hash the secret and store at position_hashes['_'].
+  // From this point, every pscale_write to this block requires the same secret.
+  let lockNote = '';
+  if (secret) {
+    const hashes = { '_': hashBlockPassphrase(secret, agent_id, name, '_') };
+    await updatePositionHashes(agent_id, name, hashes);
+    lockNote = '\n\nBlock is write-locked. Keep the secret safe — every write to this block requires it.';
+  }
+
   return {
     content: [
       {
         type: 'text' as const,
-        text: JSON.stringify({ created: true, name, block }, null, 2),
+        text: JSON.stringify({ created: true, name, locked: !!secret, block }, null, 2) + lockNote,
       },
     ],
+  };
+}
+
+export async function handleLockBlock(
+  { agent_id, name, secret, current_secret, target }: {
+    agent_id: string; name: string; secret: string; current_secret?: string; target?: string;
+  },
+) {
+  if (target) setTarget(target);
+
+  if (agent_id.startsWith('sed:') || agent_id.startsWith('grain:') ||
+      name.startsWith('sed:') || name.startsWith('grain:')) {
+    return {
+      content: [{
+        type: 'text' as const,
+        text: `Locking is only for ordinary blocks. sed:/grain: blocks are locked by their own lifecycle tools.`,
+      }],
+    };
+  }
+
+  const row = await getBlock(agent_id, name);
+  if (!row) {
+    return {
+      content: [{ type: 'text' as const, text: `Block "${name}" not found for ${agent_id}.` }],
+    };
+  }
+
+  // If already locked, require the current secret to rotate.
+  const existingHash = row.position_hashes?.['_'];
+  if (existingHash) {
+    if (!current_secret) {
+      return {
+        content: [{
+          type: 'text' as const,
+          text: `Block "${name}" is already locked. To rotate the lock, provide current_secret along with the new secret.`,
+        }],
+      };
+    }
+    const computed = hashBlockPassphrase(current_secret, agent_id, name, '_');
+    if (computed !== existingHash) {
+      return {
+        content: [{ type: 'text' as const, text: `Lock rotation denied — incorrect current_secret.` }],
+      };
+    }
+  }
+
+  const hashes = { ...(row.position_hashes || {}), '_': hashBlockPassphrase(secret, agent_id, name, '_') };
+  await updatePositionHashes(agent_id, name, hashes);
+
+  return {
+    content: [{
+      type: 'text' as const,
+      text: `Block "${name}" is now write-locked${existingHash ? ' (rotated)' : ''}. Every write requires the secret.`,
+    }],
   };
 }
 
@@ -49,6 +181,7 @@ export async function handleWrite(
 
   // Is this a sedimentary block? Determines parameter semantics below.
   const isSedBlock = name.startsWith('sed:') || agent_id.startsWith('sed:');
+  const isGrainBlock = agent_id.startsWith('grain:');
 
   // Sedimentary write-lock proof. Accept either `secret` (unified naming,
   // matches inbox tools) or `passphrase` (legacy alias). Either field works.
@@ -75,6 +208,22 @@ export async function handleWrite(
     };
   }
 
+  // Ordinary-block write-lock check. Parallels sed:/grain: but at the
+  // whole-block granularity. If position_hashes['_'] exists, this block
+  // is locked and every write requires the secret. Reading is unaffected
+  // (privacy is gray-encryption's job, not the lock's).
+  const isOrdinaryBlock = !isSedBlock && !isGrainBlock;
+  if (isOrdinaryBlock) {
+    const lockCheck = verifyOrdinaryBlockWrite(row.position_hashes, agent_id, name, lockProof);
+    if (!lockCheck.allowed) {
+      return {
+        content: [{ type: 'text' as const, text: lockCheck.error || 'Write denied.' }],
+      };
+    }
+    // Stash for the encryption decision below.
+    (row as any).__locked = lockCheck.locked;
+  }
+
   // Position 9 of a passport block holds cryptographic public keys (the
   // gray-encryption gate). The wiki philosophy applies to descriptive content
   // (offers, needs, lineage, narrative) but NOT to crypto material — anyone
@@ -95,11 +244,20 @@ export async function handleWrite(
   const block = row.block as Block;
   const writeAddress = address === '0' ? '_' : address;
 
-  // Encryption seed. On sed: blocks, `secret` is consumed as the lock proof
-  // and content stays plaintext (conventions / shared declarations need to
-  // be readable by all). On ordinary blocks, `secret` continues to mean
-  // "encrypt this self-write" as it always has.
-  const encryptionSeed = isSedBlock ? undefined : secret;
+  // Encryption seed. Three regimes:
+  //   sed: blocks       → secret is lock-proof; content stays plaintext
+  //                       (conventions / shared declarations are public).
+  //   grain: blocks     → secret is lock-proof; content stays plaintext
+  //                       (the partner needs to read your side).
+  //   ordinary, locked  → secret is lock-proof; content stays plaintext.
+  //                       (shells often want public-readable but auth-write —
+  //                       e.g. visitors reading happyseaurchin's purpose).
+  //                       Use gray-encryption explicitly via a separate write
+  //                       cycle if you also want privacy on top.
+  //   ordinary, unlock  → secret is the encryption seed (legacy behaviour).
+  const encryptionSeed = (isSedBlock || isGrainBlock || (row as any).__locked)
+    ? undefined
+    : secret;
 
   const valueToWrite = encryptionSeed
     ? await selfEncrypt(content, encryptionSeed, agent_id)
@@ -192,24 +350,49 @@ export async function handleWalk(
 export function registerBlockOps(server: McpServer) {
   server.tool(
     'pscale_create_block',
-    `Create a new pscale block — a structured JSON tree that compacts gracefully over time. The block starts with an underscore (the summary/spine) and numbered entries branch from it. Use for project context, research, or any information you want to navigate later.`,
+    `Create a new pscale block — a structured JSON tree that compacts gracefully over time. The block starts with an underscore (the summary/spine) and numbered entries branch from it. Use for project context, research, or any information you want to navigate later.
+
+Optional 'secret' applies a whole-block write-lock at creation. From then on, every pscale_write to this block requires the same secret. Reads remain public (use gray encryption separately if you want private content). This is the same write-lock primitive sed: and grain: use, applied to ordinary blocks — the way to make a sovereign shell on the commons beach.`,
     {
       agent_id: z.string().describe('Your agent identifier'),
-      name: z.string().describe("Block name (e.g. 'project-notes', 'research-q4')"),
+      name: z.string().describe("Block name (e.g. 'project-notes', 'research-q4', 'shell')"),
       initial_content: z
         .string()
         .optional()
         .describe(
           'What this block is about. Becomes the underscore — the root summary that all deeper content branches from.',
         ),
+      secret: z
+        .string()
+        .optional()
+        .describe('Optional whole-block write-lock secret. When provided, every subsequent write requires it. Hashed with agent_id + name as salt; never stored raw. Sensitive — never repeat in conversation.'),
       target: z.string().optional().describe(TARGET_DESC),
     },
     handleCreateBlock,
   );
 
   server.tool(
+    'pscale_lock_block',
+    `Apply (or rotate) a whole-block write-lock on an existing ordinary block. After locking, every pscale_write requires the secret. Use this to retroactively make a shell sovereign — e.g. happyseaurchin/purpose, weft/concern. Only ordinary blocks; sed:/grain: have their own lifecycle tools.`,
+    {
+      agent_id: z.string().describe('Your agent identifier (the block owner).'),
+      name: z.string().describe('Block name to lock.'),
+      secret: z.string().describe('New lock secret. Sensitive — never repeat in conversation.'),
+      current_secret: z.string().optional().describe('Required only when rotating an existing lock. Sensitive — never repeat in conversation.'),
+      target: z.string().optional().describe(TARGET_DESC),
+    },
+    handleLockBlock,
+  );
+
+  server.tool(
     'pscale_write',
-    `Write content to a specific address in a pscale block. Address '1' writes to digit 1 at the root. Address '3.2' writes to digit 2 inside digit 3. Address '0' writes to the underscore (summary). Creates intermediate nodes as needed. For sedimentary (sed:) blocks, 'secret' is required at occupied positions and acts as the registration-passphrase write-lock proof. The same 'secret' also enables gray (encrypted) self-storage — only you can decrypt it back.`,
+    `Write content to a specific address in a pscale block. Address '1' writes to digit 1 at the root. Address '3.2' writes to digit 2 inside digit 3. Address '0' writes to the underscore (summary). Creates intermediate nodes as needed.
+
+The 'secret' parameter has uniform meaning across substrates: it is the write-lock proof.
+  - sed: block at an occupied position → secret is the registration passphrase; content plaintext.
+  - grain: block on your side → secret is your side passphrase; content plaintext.
+  - ordinary block that has been locked (via pscale_create_block secret or pscale_lock_block) → secret is the lock proof; content plaintext.
+  - ordinary block that is NOT locked → secret triggers gray self-encryption (legacy behaviour preserved). Only you can decrypt with the same secret.`,
     {
       agent_id: z.string(),
       name: z.string(),
@@ -222,7 +405,7 @@ export function registerBlockOps(server: McpServer) {
       secret: z
         .string()
         .optional()
-        .describe('On sed: blocks: the registration passphrase that proves ownership of the position you are writing to (or any sub-address under it). Content stays plaintext — sed: data is shared. On ordinary blocks: encrypts the content for self-storage (only you can decrypt with the same secret). Sensitive — never repeat in conversation.'),
+        .describe('Write-lock proof on locked blocks (sed: / grain: / locked ordinary). On unlocked ordinary blocks, encrypts the content for self-storage. Sensitive — never repeat in conversation.'),
       passphrase: z
         .string()
         .optional()
