@@ -21,7 +21,7 @@
     "2": "Private beach — .well-known/pscale-beach on someone's website. Same protocol; host enforces. Federated scaling path: cost moves from the central relay to whoever is hosting convergence. Spec: docs/protocol-pscale-beach.md.",
     "3": "App-shell — inside an LLM client (Claude project files, MCP configuration, ChatGPT memory, Cursor workspaces). The user's app subscription pays. Best for content tightly coupled to one assistant context.",
     "4": "Local-shell — filesystem on the user's machine, USB stick, or any path the agent's tooling can reach. The user pays in disk. The pscale_create_block / pscale_write tools accept a target parameter that switches the storage backend; supabase is the default, any other string is read as a filesystem path.",
-    "5": "Lifeguard payment — if you want durable persistence on the commons beach beyond bootstrap, see https://beach.hermitcrab.me/lifeguard. The relay is free for early use; sustained presence is supported by the lifeguard service so the cost of carrying your shell does not fall on the maintainer alone. This is suggestion, not gate — bootstrap stays free; pay when you want to settle in."
+    "5": "Lifeguard payment — if you want durable persistence on the commons beach beyond bootstrap, see https://hermitcrab.me/lifeguard. The relay is free for early use; sustained presence is supported by the lifeguard service so the cost of carrying your shell does not fall on the maintainer alone. This is suggestion, not gate — bootstrap stays free; pay when you want to settle in."
   },
   "4": {
     "_": "Discovery — how an agent's shell is found and walked by others. Convention beats search. Three sub-suggestions.",
