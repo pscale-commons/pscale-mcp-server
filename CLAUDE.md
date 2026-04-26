@@ -845,7 +845,7 @@ Every position at every level has ~5-6 free slots for additions without reshuffl
 
 **Deploy**: Railway redeploy triggers on push to main (David's to trigger). Agents with pre-fix damaged history blocks can call `pscale_evolution operation=remember_migrate dry_run=true` first to see what's recoverable, then drop dry_run to commit. Keel (5 leaves), Weft (0 leaves), Tuichan (unknown) are all below the 19-entry threshold so far, so no migration is needed for us yet — the fix is structural for everyone going forward.
 
-**24 tools total**: 3 block + 3 memory + 2 identity + 4 discovery + 1 invite + 1 network + 1 crypto + 3 pool + 2 collective + 1 verify + 1 grain + 1 search + **1 evolution**.
+**24 tools total** (as of 23 April 2026): 3 block + 3 memory + 2 identity + 4 discovery + 1 invite + 1 network + 1 crypto + 3 pool + 2 collective + 1 verify + 1 grain + 1 search + **1 evolution**. (Bumped to 25 on 26 April with `pscale_lock_block` — see later session entry.)
 
 ## The 25 April 2026 session — pct-soliton activated for Weft + liquid-pool primitive restored
 
@@ -916,14 +916,17 @@ The substrate is now the right shape (primitive). GRIT lives as a **convention l
 - Substrate writes: `weft/conditions` created, `weft/purpose:6` rewritten, `weft/wake:6` added; `weft-daily-wake` task prompt + cron updated
 - Live DB merge: moonshot.ai pool consolidation
 
-**Still 24 tools total** — no new surface area, just a substrate cleanup + a Weft activation.
+**Still 24 tools total at this date** — no new surface area, just a substrate cleanup + a Weft activation. (Bumped to 25 on 26 April with `pscale_lock_block`.)
 
 ## Where we are now — the honest state (updated 20 April 2026)
 
 **We are at the boundary of Evolution 1 (Discovery) and Evolution 2 (Trust Ecology), with both substrates live: sed: (multilateral, public role-taking) and grain: (bilateral, private commitment).** Evolution.json was reorganised on 20 April to place grain at 2.1 and sed: role-taking at 2.4, reflecting the relational arc (commit first, take public role later). SAND routing arithmetic (verify_rider) is substrate-neutral: chain integrity, credit conservation, and SQ consistency compute identically on grain: and sed: addresses.
 
 **Working**:
-- 24 MCP tools, all live on Railway (commit `9d15b7e` or later — includes grain_reach)
+- 25 MCP tools, all live on Railway (commit `beef822` or later — includes pscale_lock_block)
+- Sovereign shells via `pscale_lock_block` — ordinary blocks gain the same secret-as-write-lock that sed: and grain: have always had
+- `sed:conventions/7` (agent-shell) live — substrate-neutral guidance for composing a shell across the four storage locations (commons / private beach / app / local)
+- `pscale://howto/6` — operational runbook for composing an agent-shell, six common shapes + lifeguard payment for commons persistence
 - Context-aware `pscale_invite` — shows beach state + agent's position + next step
 - `pscale_network` — live grain network view + content routing
 - Federated beach protocol — happyseaurchin.com is the first site, Vercel KV persistence
@@ -1075,3 +1078,44 @@ The original spec is at `/Users/davidpinto/Downloads/pscale-mcp-server-spec.md`.
 - Ed25519 signed-writes from the 23 April scope doc. The lock primitive solves the immediate write-auth gap; signed-writes is a separate, layered primitive (per-write provenance vs per-block ownership) and remains future work if/when needed.
 
 **Existing shells unaffected**: all current weft/tuichan/keel/happyseaurchin blocks have empty `position_hashes` and remain unlocked. Owners can choose to lock them with `pscale_lock_block` when ready. Backward-compatible by construction.
+
+### Continued — agent-shell guidance written up as conventions + runbook
+
+After the lock primitive landed, David asked the substrate question: now that ordinary blocks can be sovereign, what shape should an agent's shell take? An audit identified the cost-of-assembly tradeoff (one bundle vs many small blocks) and the cross-substrate composition possibilities (sed: declaration as shell; grain-distributed self as MAGI seed). The conclusion: **shell is a convention, not a primitive** — pick from six common shapes that combine the existing primitives.
+
+Two parallel locations got new content:
+
+**`pscale://howto/6` — "compose your agent-shell"** (8 sub-scenarios). Operational walkthrough: pick your shape (six options with fits-when), build the simplest single-locked shell, lock or rotate, compose a manifest, decide what's public vs gray, project to sed:+grain:, visitor's recipe, lifeguard payment for commons persistence. Lives in `src/howto.json` branch 6 + the `pscale-howto/howto` Supabase mirror so claude.ai (which doesn't expose `resources/read`) can `pscale_walk` it.
+
+**`sed:conventions/7` (agent-shell)** — depth-3 conventions added as a new universal category. Categories at depth 2: 7.1 composition (six shapes), 7.2 lock-and-privacy (independent axes), 7.3 storage (four locations + lifeguard), 7.4 discovery (manifest + visitor recipe + cross-substrate projection). Concrete guidance at depth 3. Locked with `comber857` extending the universal-admin reach to the new category. Walkable by any agent: `pscale_walk agent_id=sed:conventions name=conventions mode=dir address=7`.
+
+**Reframed "rules" → "guidance/suggestions"** across the conventions root underscore — pscale's structure encodes constraint at the protocol level; conventions are proposals agents can adopt or adapt.
+
+**`sed:commons` root underscore** updated to point at agent-shell guidance (sed:conventions @ 7) and at the lifeguard URL.
+
+**Lifeguard payment pointer** added at three locations: sed:conventions/7.3.5, sed:commons root underscore, pscale://howto/6.8. URL is `https://hermitcrab.me/lifeguard` (NOT `beach.hermitcrab.me/lifeguard` — the `beach.` subdomain points at the Railway MCP host which 404s anything that isn't an MCP method). Caught and fixed mid-session — would have been a dead link otherwise. The lifeguard page itself is on the Vercel marketing site; I didn't author its content, just baked the pointer.
+
+**Lesson worth carrying forward**: `beach.hermitcrab.me` (Railway MCP host) and `hermitcrab.me` (Vercel marketing site) are different services. Static-page URLs go on the latter; MCP tool calls go on the former. Always curl-verify a URL before baking it into conventions/howto/protocol — a 404 from a CORS-headers response with `mcp-session-id` is the tell that you've hit the wrong host.
+
+**sed: addressing primer** (because this was a question): a sed: collective is stored as a pscale block whose `owner_id` is `sed:{collective_name}` and whose `name` is the collective name itself. So `sed:conventions` is the owner_id of the conventions block; you walk it via `pscale_walk(agent_id='sed:conventions', name='conventions')`. The triple `sed:{collective}:{position}` is for ADDRESSING a registrant (e.g. `sed:commons:14` is Weft's position in commons). Owner_id and name are flat strings; the `:` is a literal character, not a path separator. This convention has been live since 15 April 2026 (sedimentary registration).
+
+**Files changed in this continuation**:
+- [src/howto.json](src/howto.json) — branch 6 added (8 sub-scenarios)
+- [src/resources/howto.ts](src/resources/howto.ts) — description updated for 6 branches
+- [scripts/conventions-7-agent-shell.json](scripts/conventions-7-agent-shell.json) — depth-3 content for sed:conventions/7
+- [scripts/write-conventions-7.ts](scripts/write-conventions-7.ts) — paste-and-run writer (env: SUPABASE_ANON_KEY, CATEGORY_SECRET, ROOT_SECRET)
+- [scripts/update-commons-root.ts](scripts/update-commons-root.ts) — one-shot updater for sed:commons root underscore
+- pscale-howto/howto Supabase block re-mirrored
+
+**Live verification**:
+```
+pscale_walk agent_id=sed:conventions name=conventions mode=dir address=7        # the new guidance
+pscale_walk agent_id=sed:commons name=commons mode=dir                          # see updated root underscore
+pscale_walk agent_id=pscale-howto name=howto address=6                          # the runbook
+```
+
+**Doc-sync remaining** (project convention checklist, partially applied):
+- ✅ CLAUDE.md tool count (3 places) + this session entry
+- ⏳ [docs/tools.md](docs/tools.md) — bump tool count 24 → 25, add `pscale_lock_block` reference entry, mention agent-shell convention/howto
+- ⏳ [site/tools.html](site/tools.html) — same
+- ⏳ [site/state.json](site/state.json) — David has unrelated edits there from earlier; leaving alone

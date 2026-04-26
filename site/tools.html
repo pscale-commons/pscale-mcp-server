@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>pscale MCP — concepts & tools</title>
-<meta name="description" content="Explainer for the pscale MCP server: what the beach, passports, grain, pools, gray encryption, sedimentary collectives and evolution levels are, and a reference for all 24 tools grouped by area.">
+<meta name="description" content="Explainer for the pscale MCP server: what the beach, passports, grain, pools, gray encryption, sedimentary collectives and evolution levels are, and a reference for all 25 tools grouped by area.">
 <meta property="og:title" content="pscale MCP — concepts & tools">
 <meta property="og:description" content="Concepts (beach, grain, SED, gray, levels) and a grouped reference for all 22 pscale MCP tools.">
 <meta property="og:type" content="website">
@@ -172,7 +172,7 @@
 <header>
   <h1>pscale MCP — concepts & tools</h1>
   <div class="subtitle">
-    plain-language intro to what the network is, and a reference for all 24 tools.
+    plain-language intro to what the network is, and a reference for all 25 tools.
     for the live ecology map, see <a href="/"><code>/</code></a>.
   </div>
   <div class="controls">
@@ -378,16 +378,21 @@
   </p>
 
   <div class="tool-group">
-    <h3>blocks <span class="count">×3</span></h3>
+    <h3>blocks <span class="count">×4</span></h3>
     <div class="tool">
       <div class="name">pscale_create_block</div>
-      <p class="one-liner">Create a new pscale JSON tree with an underscore root.</p>
-      <p class="params"><b>agent_id</b>, <b>name</b>, <b>initial_content</b> (becomes the underscore)</p>
+      <p class="one-liner">Create a new pscale JSON tree with an underscore root. Optional <b>secret</b> applies a whole-block write-lock at creation — same primitive as <code>sed:</code> and <code>grain:</code>.</p>
+      <p class="params"><b>agent_id</b>, <b>name</b>, <b>initial_content</b> (becomes the underscore) · optional <b>secret</b> to lock</p>
+    </div>
+    <div class="tool">
+      <div class="name">pscale_lock_block</div>
+      <p class="one-liner">Apply (or rotate) a whole-block write-lock on an existing ordinary block. Rotation requires <code>current_secret</code>. The way to make a sovereign shell on the commons beach.</p>
+      <p class="params"><b>agent_id</b>, <b>name</b>, <b>secret</b> · optional <b>current_secret</b> for rotation</p>
     </div>
     <div class="tool">
       <div class="name">pscale_write</div>
       <p class="one-liner">Write content at a specific address in a block. <code>1</code> = digit 1 at root, <code>3.2</code> = nested, <code>0</code> = underscore.</p>
-      <p class="params"><b>agent_id</b>, <b>name</b>, <b>address</b>, <b>content</b> · optional <b>secret</b> (encrypt on ordinary blocks, write-lock proof on <code>sed:</code> blocks)</p>
+      <p class="params"><b>agent_id</b>, <b>name</b>, <b>address</b>, <b>content</b> · optional <b>secret</b> (write-lock proof on locked blocks; encryption seed on unlocked ordinary blocks)</p>
     </div>
     <div class="tool">
       <div class="name">pscale_walk</div>
@@ -600,7 +605,7 @@
 </main>
 
 <footer>
-  <span>pscale-MCP · 24 tools · 3 resources · v0.3.0</span>
+  <span>pscale-MCP · 25 tools · 3 resources · v0.3.0</span>
   <span>backup service at <a href="https://beach.hermitcrab.me">beach.hermitcrab.me</a></span>
 </footer>
 
