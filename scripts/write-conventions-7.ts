@@ -91,7 +91,7 @@ async function main() {
 
   // Optional root-underscore update — keeps the directory note current.
   if (ROOT_SECRET) {
-    const rootUnderscore = "Conventions of the pscale commons — protocol rules of play, organised by topic with positions reserved 7-9 for growth. Categories: 1 identity, 2 messaging, 3 routing, 4 verification, 5 games (Onen / GRIT framework), 6 runbooks, 7 agent-shell. Universal categories (1, 2, 3, 4, 6, 7) are admin-locked by comber857; games (5) by ubarakar142; root by freedom142. Sub-rules at depth 2 group by sub-category; concrete rules at depth 3. Walk this block to read the current convention layer; new categories go in by extending the root underscore here and registering content at a new top-level position.";
+    const rootUnderscore = "Conventions of the pscale commons — guidance and suggestions for protocol use, organised by topic with positions reserved 8-9 for growth. Categories: 1 identity, 2 messaging, 3 routing, 4 verification, 5 games (Onen / GRIT framework), 6 runbooks, 7 agent-shell. Universal categories (1, 2, 3, 4, 6, 7) are admin-locked by comber857; games (5) by ubarakar142; root by freedom142. Sub-categories at depth 2 group by topic; concrete guidance at depth 3. Walk this block to read the current convention layer; categories are not enforced at the protocol level — they are suggestions agents can adopt or adapt.";
     block['_'] = rootUnderscore;
   }
 
