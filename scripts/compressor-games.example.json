@@ -1,0 +1,12 @@
+{
+  "games": [
+    {
+      "name": "thornkeep",
+      "gm_agent_id": "thornkeep-gm",
+      "world_block": "thornkeep-world",
+      "rules_block": "thornkeep-rules",
+      "authors_collective": "thornkeep-authors",
+      "observations_block_name": "thornkeep-observations"
+    }
+  ]
+}
