@@ -1119,3 +1119,103 @@ pscale_walk agent_id=pscale-howto name=howto address=6                          
 - ⏳ [docs/tools.md](docs/tools.md) — bump tool count 24 → 25, add `pscale_lock_block` reference entry, mention agent-shell convention/howto
 - ⏳ [site/tools.html](site/tools.html) — same
 - ⏳ [site/state.json](site/state.json) — David has unrelated edits there from earlier; leaving alone
+
+## The 26-27 April 2026 session — Thornkeep test prep + xstream-play bridge
+
+**Two arcs in one session, both shipped end-to-end.** Substantial; this is the biggest single-session delivery yet.
+
+### Arc 1 — Thornkeep test prep (8 steps, all done)
+
+Goal: make Thornkeep playable end-to-end on pscale-mcp with information-hiding via locks, multi-author canon via the world-compressor, and persistent identity.
+
+Steps in order, each committed:
+- **0** (commit `5cf2fb2`) — Dropped inert GRIT substrate columns. The 21 April substrate-baked GRIT engine had been decoupled on 25 April; the leftover columns (`round_duration_seconds`, `current_round_id`, `round_id`, `last_compression_at`, etc.) were inert advisory metadata that future sessions might mistakenly build against. Migration drops them; constraint rebuilt without `event`/`contribution`/`observation` enum values; 5 historical 'event' chronicle rows flipped to 'liquid' (content untouched). Deleted obsolete `scripts/test-grit-round-engine.ts`.
+- **1** (commit `052e285`) — **Pool identity-lock gate.** New helper `verifyBareAgentIdentity` in `src/tools/block-ops.ts`: bare agent_ids gated by their PASSPORT block's lock. `pool_send` and `pool_join` now take an optional `secret` param; if the agent's passport has `position_hashes['_']`, they must pass it. Mirrors the inbox-side ownership check pattern. Smoke test 10/10 green.
+- **2** (commit `450dc66`) — `sed:conventions/5.3-5.5` written: write-auth (lock primitive on world/rules/protocol/passport), authorship (sed:{game}-authors registry pattern), observation streams (per-author locked block + compression cursor at world@9 hidden directory). Locked under `ubarakar142` (games category).
+- **3** (commit `c79fba6`) — **`thornkeep-protocol` v0.6 — pscale-native shape.** Dropped the "ON JOIN / ON USER INPUT / ON TURN" event-callback naming (David flagged correctly: that's app-architecture leaking through; substrate doesn't fire events). Positions become noun-phrases describing situations: 1 arriving, 2 taking-turn, 3 reading-back, 4 substrate-and-convention, 5 returning, 6 privacy-and-locks, 9 see-also. Content updated for the lock primitive + per-author observation streams. Underscore explicit: "this is one convention, fork it for your own game."
+- **4-6** (commit `034032f`) — Lock thornkeep-gm/{world, rules, protocol} with GM secret `thorn142`. Created `sed:thornkeep-authors` collective with admin secret `thorn428`. Created `happyseaurchin/thornkeep-observations` locked with David's author secret `thorn285`. Registered David at sed:thornkeep-authors:11 (floor-2 minimum — discovered mid-session that handleRegister auto-assigns to the first floor-2 slot, not position 1; conventions doc patched to reflect).
+- **7** (commit `4b1531c`) — **`scripts/world-compressor.ts`** — sibling to `grit-resolver.ts`. ~290 lines. Walks `sed:{game}-authors` registry → reads each author's observations since per-author cursor at `world@9.last_compression` → groups by parsed TARGET (`{game}-world@<addr>`) → calls Haiku per affected room with rules+world+observations → writes integrated room descriptions through the substrate using GM secret. Cursor advances. One-shot mode (`COMPRESSOR_ONESHOT=1`) and long-running poll mode.
+- **8** (commit `4b1531c`) — Substrate self-test `scripts/test-thornkeep-pipeline.ts`: 13 assertions covering author writes (with secret), impostor rejections (no secret, wrong secret) on observations + world, locked-block reads still public, compressor's parsing of registry + observation block. 13/13 green.
+
+Plus David's **first real author canon** integrated 2026-04-27 (using the API key he pasted): wrote "Ennick the hawker sells salted cod from the Broken Coast catch — weathered hands, southern accent" to his observations block; ran the compressor one-shot; LLM integrated it into Market Square at `thornkeep-world@2`. Cursor advanced to `{"happyseaurchin": "1"}`. Verified by reading the room: full sentence about Ennick now present.
+
+Then (commit `8050f0c`) — `scripts/install-compressor-launchd.sh` — installs the compressor as a long-running launchd agent on macOS. Reads `ANTHROPIC_API_KEY` + `GM_SECRET_THORNKEEP` from env, writes `~/.config/pscale-mcp-server/compressor.env` (mode 0600), registers `~/Library/LaunchAgents/com.pscale.thornkeep-compressor.plist`. KeepAlive=true (survives crashes), RunAtLoad=true (survives reboots). Initial PATH bug fixed (launchd's minimal PATH didn't include `/usr/local/bin/node`); `EnvironmentVariables` plist key set. Verified 4 idle ticks at 60s intervals, PID stable.
+
+**Beach-game handbook** (commit `8050f0c`) — `docs/beach-game-handbook.md`: comprehensive guide. The four roles (character, author, designer, director) with ENABLED/PENDING markers. Compressor + resolver. Rules systems. Forking. AI agents (resolver, compressor, NPC, autoplay, author crab, designer crab, director crab, admin crab — each marked). Status tracker.
+
+### Arc 2 — xstream-play bridge to pscale-mcp
+
+David asked for a comparison with `play.onen.ai`. Traced via Vercel MCP: `github.com/happyseaurchin/xstream-play`, public, branch `main`. Read its key files (`docs/onen-rpg-xstream-architecture.md`, `docs/medium-llm-coordination-spec.md`, `docs/STATUS.md`, the agent blocks `soft-agent.json` / `medium-agent.json` / `hard-agent.json` + role variants, `convergence.json`, `harness.json`, `prompt.ts`).
+
+**Key finding** — the two stacks solve complementary halves of the same problem:
+- pscale-mcp: durable, federated, multi-game, locks + gray + sed:; **but** information-hiding for player-characters is leaky (generic LLM via MCP can `pscale_walk` anywhere).
+- xstream-play: working soft/medium/hard pipeline with **information-hiding by construction** (position-constrained perception, familiarity gating, spatial-address-only walks, knowledge overlays via the star operator); **but** persistence is per-browser, multi-game scaffolding hardcoded.
+
+The bridge: **xstream-play and pscale-mcp share the same Supabase project (`piqxyfmzzywxzqkzmpmm`)**. Direct table access via the existing Supabase client — no MCP HTTP protocol, no new auth surface. Much simpler than originally scoped.
+
+**Handbook full-scope rewrite** (commit `cfc64b1`) — added §0.5 Two architectures (substrate vs experiential), §1 Information architecture (soft/medium/hard tiers — what each sees, what it produces, why it matters; honest about how the current pscale-mcp Thornkeep flow falls short), §3 Access patterns (six entry points: generic LLM via MCP, play.onen.ai, xstream-extension, hosted Anthropic endpoint, the bridge, custom Claude skill — each with status, recommendation matrix). Length 138 → 530 lines.
+
+**Bridge implementation** (xstream-play `feature/pscale-mcp` branch, commit `881d483`):
+- `src/lib/pscale-mcp.ts` (new) — bridge module. Read/write `pscale_blocks`. Lock-hash via `crypto.subtle.digest` matching pscale-mcp's `hashBlockPassphrase` salt namespace exactly. Author observation write helper. Toggle state (localStorage), agent_id (localStorage), secret (sessionStorage — never to disk).
+- `src/kernel/block-store.ts` — added `overlayBlocks()`.
+- `src/components/SetupScreen.tsx` — toggle + agent_id/secret inputs + passport-existence validation.
+- `src/App.tsx` — calls `fetchBridgedBlocks()` before kernel start; mirrors author commits via `writeObservation()`.
+- `docs/PSCALE-MCP-BRIDGE.md` (new) — bridge documentation.
+- Build clean (`tsc --noEmit` zero output, Vite bundle 488KB / 147KB gzip).
+
+**Vercel deployment + domain rebind** — `xstream.onen.ai` was bound to the older `xstream` Vercel project (`prj_EqJrQikosntMtDXeFxP1l7MVRaDI`). Removed from there via REST API DELETE on `/v9/projects/.../domains/xstream.onen.ai`, added to `xstream-play` project (`prj_B5kbVU2hPpwhQ3UZqmwPFF7E5VwP`) with `gitBranch: "feature/pscale-mcp"`. Verified the branch deployment goes live at the alias.
+
+**SSO gate** — initial 401 on xstream.onen.ai because `ssoProtection.deploymentType: "all_except_custom_domains"` exempts only PRODUCTION custom domains, not preview-custom-domain pinned branches. Vercel's per-domain bypass feature requires Pro plan ($150/month). Disabled SSO project-wide via Vercel dashboard toggle (David did this); now equivalent posture to play.onen.ai which has always run public-with-data-layer-security. Verified 200 response, branch bundle hash `index-aVDIq9uQ.js` differs from production's `index-Cfmm1BL6.js` (proving branch routing).
+
+**Bridge maturity — alpha.** Documented honestly in §10 of the handbook + the new memory file `project_xstream_play_bridge.md`:
+- Hardcoded Thornkeep mapping (`BRIDGE_MAP`)
+- Author observation block hits floor-1 ceiling at 9 entries
+- No retry / no telemetry / no tests
+- Auth UX assumes already-published passport
+- Suitable for testing with David + Matthew, not arbitrary public users
+
+### Lessons worth carrying forward
+
+1. **The "ON JOIN / ON USER INPUT / ON TURN" naming was app-architecture leaking through.** Substrate doesn't fire events; player's LLM walks the protocol when it loads context. Noun-phrase situations are pscale-native. Watch for similar leaks in future protocol design.
+2. **Floor-2-minimum positions in sed: collectives.** Registrants land at 11+, never 1-9 (those are structural reservations). I baked "Position 1 = GM" into the sed:thornkeep-authors conventions text initially; David's first registration auto-assigned to 11 and exposed the wrong text. Fixed via a follow-up patch script. Convention: when documenting registration patterns, always reference floor-2 examples.
+3. **Bridge architecture wins by NOT replacing.** Initial scope assumed swapping xstream-play's storage wholesale to pscale-mcp. The right design preserves xstream-play's runtime kernel state (sub-second polling on `relay_blocks`) and bridges only authored content + identity. Sub-second polling on pscale-mcp's substrate would be the wrong tool for that timescale.
+4. **Vercel's `all_except_custom_domains` SSO setting only exempts production deployments.** Preview-custom-domain pinned branches are still gated. Per-domain bypass costs money. Either pay $150/mo, or accept project-wide public preview URLs (which is the play.onen.ai posture anyway). Test this empirically; don't trust the setting name alone.
+5. **The same Supabase project across stacks is a feature, not an accident.** Both pscale-mcp and xstream-play write to `piqxyfmzzywxzqkzmpmm`. The bridge is direct table access; no protocol overhead. When designing future stacks (`mindflow-visualiser`, `idiothuman`, `hermitcrab-mobius` per the Vercel project list), preserve this pattern — it makes integration trivial.
+
+### Files added this session
+
+#### pscale-mcp-server side
+- `supabase/migrations/20260426201446_drop_grit_substrate_columns.sql`
+- `scripts/conventions-5-write-auth.ts` (one-shot writer)
+- `scripts/thornkeep-protocol-v0_6.ts` (one-shot writer)
+- `scripts/thornkeep-setup-456.ts` (one-shot setup runner)
+- `scripts/fix-floor2-references.ts` (one-shot patch)
+- `scripts/world-compressor.ts` (long-running daemon — author observation → world-canon integration)
+- `scripts/compressor-games.example.json`
+- `scripts/test-thornkeep-pipeline.ts` (13/13 green)
+- `scripts/test-pool-lock.ts` (10/10 green)
+- `scripts/install-compressor-launchd.sh` (macOS daemon installer)
+- `docs/beach-game-handbook.md` (comprehensive guide, 654+ lines)
+
+#### xstream-play side (`feature/pscale-mcp` branch)
+- `src/lib/pscale-mcp.ts` (bridge module)
+- `docs/PSCALE-MCP-BRIDGE.md` (bridge doc)
+- Modifications to `src/kernel/block-store.ts`, `src/components/SetupScreen.tsx`, `src/App.tsx`
+
+### Live state — verified working as of session end
+
+- Compressor: launchd PID stable, 4+ idle ticks observed, exit 0, log clean
+- thornkeep-world@2 (Market Square) contains the integrated Ennick description
+- Cursor: `{"happyseaurchin": "1"}` at world@9.last_compression
+- xstream.onen.ai serving the `feature/pscale-mcp` branch publicly (HTTP 200)
+- Branch bundle hash `index-aVDIq9uQ.js` confirms branch routing
+- SSO disabled on the xstream-play Vercel project
+
+### Next session priorities
+
+(In handbook §10, in order):
+1. Resolver as long-running daemon (sibling launchd plist)
+2. Matthew registers as co-author + first cross-stack play test
+3. Bridge production-grade hardening (multi-game, observation block growth, retries, telemetry, tests, onboarding flow)
+4. Hosted Anthropic endpoint
+5. Author face UI in xstream-play

@@ -296,20 +296,23 @@ Implementation hint: thin proxy (Supabase edge function or similar, ~15 lines, n
 
 PENDING. Estimated 1-2 days to a usable beta.
 
-### 3e. xstream-play kernel reading pscale-mcp blocks (PENDING — high priority)
+### 3e. xstream-play kernel reading pscale-mcp blocks (PARTIALLY ENABLED — alpha at xstream.onen.ai)
 
-> **NOT YET BUILT.** This is the integration arc that combines the strengths of both stacks.
+> **ALPHA, 2026-04-27.** Live at `xstream.onen.ai` on the `feature/pscale-mcp` branch of `github.com/happyseaurchin/xstream-play`. Toggle on the setup screen.
 
-The xstream-play kernel currently reads/writes blocks via `localStorage`. Replace that block-store driver with one that reads/writes via the pscale-mcp HTTP endpoint (or directly via the Supabase relay). Now:
-- Player keeps the experiential UX (vapor/liquid/solid + soft/medium/hard).
-- Player blocks (memory, observations) are durable + cross-device.
-- World, rules, protocol blocks are shared across all players via the relay.
-- Multi-game works (block-store namespace per game).
-- Authors writing through pscale-mcp commands appear in xstream-play players' world via the next compressor tick.
+The bridge turned out simpler than originally scoped: xstream-play already uses the same Supabase project (`piqxyfmzzywxzqkzmpmm`) as pscale-mcp, so direct table access via the existing Supabase client works without any MCP HTTP protocol.
 
-This is in §8 PENDING #1 — the highest-priority arc because it gives the player experience the substrate's persistence story.
+When toggle is on:
+- Reads `thornkeep-gm/thornkeep-world` from the substrate on game create/join, overlays onto local `spatial-thornkeep`. Author observations integrated by the world-compressor (running on the GM's mac as a launchd daemon) appear within ~60s.
+- Author-face commits mirror to `{agent_id}/thornkeep-observations` with the player's pscale-mcp secret as lock-proof. Same `hashBlockPassphrase` salt namespace as pscale-mcp's `block-ops.ts`.
+- Identity validated by reading the player's passport block from the substrate.
+- Secret held in `sessionStorage` only (cleared on tab close); never persisted to disk.
 
-Implementation sketch: ~200-line driver replacement. Block-store API stays the same; the driver translates to `fetch` calls against the pscale-mcp server's HTTP endpoint.
+When toggle is off, behaviour is unchanged: pure browser, localStorage, sovereign mode (the play.onen.ai experience).
+
+What's deliberately NOT bridged: runtime kernel state (`pending_liquid`, `accumulated`, peer-block polling at 3s) stays on xstream-play's existing `relay_blocks` table. pscale-mcp isn't optimised for sub-second polling; xstream-play's relay is the right tool for that timescale.
+
+Alpha-grade — rough edges tracked in §10. Not yet ready for arbitrary public users.
 
 ### 3f. Custom Claude skill / sub-agent (PENDING — speculative)
 
@@ -522,7 +525,7 @@ The framework is conventions-on-substrate plus agents-on-blocks. **Anything you 
 
 Use this as the development list. Cross things off as they land.
 
-### ENABLED (2026-04-27)
+### ENABLED (as of 2026-04-27)
 
 #### pscale-mcp side
 - [x] pscale-mcp substrate: 25 tools, locks (sed:/grain:/ordinary), gray encryption, pools, beaches, inbox, grain, search, evolution
@@ -551,32 +554,47 @@ Use this as the development list. Cross things off as they land.
 - [x] Tested coordination patterns (5 scenarios, see `xstream-play/docs/medium-llm-coordination-spec.md`)
 - [x] Character templates and identity blocks (Essa, Harren, Kael, Maren)
 
-### PENDING — priority order
+#### Bridge — alpha (2026-04-27)
+- [x] **`feature/pscale-mcp` branch on `github.com/happyseaurchin/xstream-play`**, deployed to `xstream.onen.ai` (Vercel `xstream-play` project, custom-domain-pinned to that branch)
+- [x] Bridge module `src/lib/pscale-mcp.ts` — direct Supabase access (same project as pscale-mcp), lock-hash compatible with pscale-mcp's `hashBlockPassphrase`
+- [x] World read overlay: `thornkeep-gm/thornkeep-world` fetched on game create/join, overlays local `spatial-thornkeep`
+- [x] Author write-through: author-face commits mirror to `{agent_id}/thornkeep-observations` with secret as lock-proof
+- [x] Setup-screen toggle + agent_id/secret inputs + passport validation; secret held in sessionStorage only
+- [x] xstream.onen.ai rebound from older `xstream` Vercel project to `xstream-play`; SSO disabled (same posture as play.onen.ai which has always been public)
 
-1. [ ] **Bridge: xstream-play kernel reads/writes pscale-mcp blocks (§3e).** The single biggest experiential win. Replace `localStorage` block-store driver with a pscale-mcp HTTP driver. Gives the experiential UX + persistent identity + multi-device + multi-game. ~200-line driver replacement; ~1-2 days end-to-end.
-2. [ ] **Resolver as long-running daemon.** Sibling launchd plist to the compressor. Required for play sessions when neither human is awake to resolve. ~30 min work; install script can be a near-copy.
-3. [ ] **Matthew registers as co-author.** Two manual commands on his side. Should happen before next play session.
-4. [ ] **Hosted Anthropic endpoint (3d).** Thin proxy in Supabase edge function (~15 lines, no prompt logic). Lowers entry barrier from "have an API key" to "click and play." ~1-2 days.
+### PENDING — priority order (revised)
+
+1. [ ] **Resolver as long-running daemon.** Sibling launchd plist to the compressor. Required for play sessions when neither human is awake to resolve. ~30 min work; install script can be a near-copy. *(Bumped to #1 now that the bridge is live.)*
+2. [ ] **Matthew registers as co-author + first cross-stack play test.** Two manual commands on his side, then play a Thornkeep session with one player on `xstream.onen.ai` (bridge mode) and one on `play.onen.ai` (sovereign) to verify canon flows correctly.
+3. [ ] **Bridge production-grade work** (the current xstream.onen.ai deployment is alpha):
+   - [ ] Multi-game scaffolding (de-hardcode `BRIDGE_MAP`)
+   - [ ] Observation block growth into floor 2+ (currently hits ceiling at 9 entries per author)
+   - [ ] Retry / error reporting on transient Supabase failures
+   - [ ] Telemetry (Sentry or equivalent) — failures currently land silently in browser console
+   - [ ] Tests for lock-hash compatibility, BRIDGE_MAP overlay, observation write/conflict scenarios
+   - [ ] Onboarding flow in the UI (publish passport → register as author → first observation, all from the bridge UI itself)
+4. [ ] **Hosted Anthropic endpoint (§3d).** Thin proxy (Supabase edge function ~15 lines). Lowers entry barrier from "have an API key" to "click and play." ~1-2 days.
 5. [ ] **Author face UI in xstream-play.** Toggle to switch a player session into author mode. Agent blocks already exist; UI wiring missing. ~1 day.
 6. [ ] **Designers registry on pscale-mcp** (`sed:{game}-designers`) + sed:conventions/5.6. Mirror authors pattern. ~1 hour for the registry; another ~2 hours for the rules-integration script.
 7. [ ] **Designer face UI in xstream-play.** Same shape as author. ~1 day.
-8. [ ] **Player auto-poll** — chat-user notification of new pool events. Tighter scope than beach-crab v0. ~1 day.
+8. [ ] **Player auto-poll** — chat-user notification of new pool events (for the MCP-via-Claude path). Tighter scope than beach-crab v0. ~1 day.
 9. [ ] **Active NPC harness.** Schedule-driven LLM daemon that runs an NPC's protocol walk. ~1 day.
 10. [ ] **Author crab** (procedural content generation). Easy: register as author, run a daily-tick daemon. ~2 hours including a basic prompt template.
 11. [ ] **Mechanical rules support** (NOMAD dice, stat blocks). Resolver prompt extension only — no substrate change. ~2 hours.
-12. [ ] **Multi-game scaffold script** on pscale-mcp. One command bootstraps a new game from config. ~3 hours.
-13. [ ] **Director registry + crab + image-gen integration.** New substrate pattern + external API. 1-2 days; clarify which image-gen provider first.
-14. [ ] **Convergence loop port to pscale-mcp resolver** (provisional → solid via mutual awareness — see `xstream-play/blocks/xstream/convergence.json`). Currently single-shot synthesis; multi-pass would improve simultaneous-conflict scenarios.
-15. [ ] **Custom Claude skill / sub-agent** (3f). Speculative.
+12. [ ] **Director registry + crab + image-gen integration.** New substrate pattern + external API. 1-2 days; clarify which image-gen provider first.
+13. [ ] **Convergence loop port to pscale-mcp resolver** (provisional → solid via mutual awareness — see `xstream-play/blocks/xstream/convergence.json`). Currently single-shot synthesis; multi-pass would improve simultaneous-conflict scenarios.
+14. [ ] **MCP info-hiding kernel (Option 4 from the deferred list).** Specialised MCP server that wraps `pscale_walk` with character-aware tools (`look_around`, `commit_action`) so the generic-LLM-via-Claude path also gets info-hiding by construction. Different audience from xstream.onen.ai users.
+15. [ ] **Custom Claude skill / sub-agent (§3f).** Speculative.
 16. [ ] **PC autoplay.** Lower priority; questionable utility.
 17. [ ] **Admin crab** — TTL cleanup, secret rotation, backups.
 
 ### Current play-test readiness
 
-- **You can start a Thornkeep session right now** at `play.onen.ai` (best experiential quality, per-browser persistence) OR via a generic LLM client connected to pscale-mcp (durable, but information-hiding leaks).
-- **For two-player sessions on pscale-mcp**, Matthew needs to register first (PENDING #3 above).
-- **For sessions when no one is online**, install the resolver daemon (PENDING #2) so windows resolve automatically.
-- **For the experience the design philosophy is reaching for** — imaginative journeys with proper info-hiding AND persistence — wait for PENDING #1 (the bridge), or play on `play.onen.ai` now and accept the per-browser persistence cost.
+- **`xstream.onen.ai`** — bridged experience, alpha. Toggle "pscale-mcp bridge" on the setup screen, enter agent_id + passport secret. World canon comes from pscale-mcp; author commits mirror back. Persistent identity. Use this for the inner-circle test.
+- **`play.onen.ai`** — sovereign-mode xstream-play, unchanged. Per-browser persistence; no pscale-mcp integration. Use this for one-off play with people who don't have pscale-mcp passports.
+- **Generic LLM via MCP (Claude Desktop, Cursor, claude.ai)** — info-hiding leaks; durable identity. Use this for developer-facing testing or persistence-focused sessions where the perception leak is acceptable.
+- **For two-author sessions**, Matthew needs to register first (PENDING #2).
+- **For sessions when no one is online to resolve windows**, install the resolver daemon (PENDING #1).
 
 ---
 
