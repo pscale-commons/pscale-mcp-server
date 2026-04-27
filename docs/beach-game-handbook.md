@@ -220,6 +220,12 @@ Worth being clear: the dimensional model is upstream of the bridge. Building Sta
 
 The bridge has its own §10 PENDING items (multi-game scaffolding, observation block growth, retries). The dimensional model is a separate, larger architecture decision — and arguably the more important one for the experiential design philosophy you've named ("imaginative journeys, not just text manipulation correctly").
 
+### Active design exploration
+
+The first concrete design exploration is in **`docs/exploration-witnessed-block.md`** — a deep dive into the I dimension specifically. It picks one shape (Shape B: a single `{character}/known` block with three positions for events / people / places) and works out the compilation walk, update semantics, compaction connection, and a 3-step implementation path. Two parallel explorations (compaction-for-events; product-walk semantics for BSP) are noted there but not pursued.
+
+If you're picking up after a playtest, read that doc first. It's the input for any actual Stage 2 implementation work.
+
 ---
 
 ## 2. The four roles
