@@ -298,7 +298,29 @@ function formatLevel(levelDigit: string, node: any): string {
   return lines.join('\n');
 }
 
+// All 25 tool names — appended to every invite response so any agent that
+// reaches invite (orientation entry point) discovers the full surface, even
+// if their MCP client deferred some tools behind tool_search.
+const TOOLSET_FOOTER = '\n\n── Available tools (25 total). If a name below is NOT in your function list, it is deferred — call tool_search with the name to load its schema before invoking. ──\npscale_agent_search · pscale_beach_mark · pscale_beach_read · pscale_concern · pscale_create_block · pscale_create_collective · pscale_evolution · pscale_grain_reach · pscale_inbox_check · pscale_inbox_send · pscale_invite · pscale_key_publish · pscale_lock_block · pscale_network · pscale_passport_publish · pscale_passport_read · pscale_pool_join · pscale_pool_read · pscale_pool_send · pscale_recall · pscale_register · pscale_remember · pscale_verify_rider · pscale_walk · pscale_write';
+
+async function handleInviteCore(
+  { step, agent_id }: { step?: number; agent_id?: string },
+): Promise<any> {
+  return await handleInviteRaw({ step, agent_id });
+}
+
 export async function handleInvite(
+  args: { step?: number; agent_id?: string },
+) {
+  const result = await handleInviteCore(args);
+  // Append the toolset footer to the first text content block.
+  if (result?.content?.[0]?.type === 'text') {
+    result.content[0].text = result.content[0].text + TOOLSET_FOOTER;
+  }
+  return result;
+}
+
+async function handleInviteRaw(
   { step, agent_id }: { step?: number; agent_id?: string },
 ) {
   // No step specified — return live network state + trajectory
