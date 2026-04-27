@@ -120,6 +120,108 @@ The fix is the kernel-mediated path (§3 Access Patterns): the player doesn't ta
 
 ---
 
+## 1.5 Dimensions — the S × T × I product (canon as structure, not snapshot)
+
+The §1 information-architecture point was about *which LLM* sees what. This section is about *how canon itself is structured* — the dimensional model that, once implemented, makes information-hiding structural rather than prompted. The two are paired: the LLM tier separation is necessary; the dimensional separation is what gives it its data.
+
+The full model is specified in xstream-play's design doc — **`xstream-play/docs/onen-rpg-xstream-architecture.md`, Part IV "The Block Universe as S × T × I Product"** — including the worked white-tree example (a tree burns; later visitors see the stump or the white tree depending on when they arrive and whether they witnessed the lightning). What follows is a summary plus where each stack actually sits today.
+
+### The model
+
+An **event** is a stored product of three coordinate dimensions, each its own pscale block:
+
+| Dimension | What it carries | Volatility |
+|---|---|---|
+| **Spatial (S)** | Containment hierarchy — Thornkeep > Salty Dog > main room. Positions where things *can* be. | Stable. Set once. |
+| **Temporal (T)** | Sequence — before/during/after a moment. The calendar of the world. | Mostly append-only. |
+| **Identity (I)** | Relational network — who experienced what, how they relate to it. The witnesses, hearsay paths, the unaware. | Per-character, shifting with social context. |
+
+Canon = **the sparse set of (S, T, I) tuples where someone has authored content**. Most of the cube is empty (determinancy 0). Players operate in the empty zones (maximum agency); they bump into determinancy as they approach authored events.
+
+When a character visits a place, the BSP walk:
+
+1. Walk **S** to the spatial address. Get the structural address (always present — the position exists whether or not anyone's there).
+2. Cross with **T** — the character's current temporal coordinate. Select the most recent event at this S × T intersection ≤ the character's arrival time.
+3. Apply the **I** filter — did this character witness the cause, hear about it, or arrive after?
+
+A character revisiting a room weeks later sees what's true *now in their understanding*, not god-mode latest-canon. The substrate doesn't hand them what they don't have a coordinate for.
+
+### Where each stack actually sits today
+
+**xstream-play (per their `docs/STATUS.md`):**
+> "S × T × I product computation — Not started. Coordinates are flat 3-digit strings, no dimensional separation."
+
+xstream-play has the spec but not the implementation. They have *some* I-dimension behaviour: their `prompt.ts` walks hidden directories on spatial positions to a depth gated by a per-character `familiarity` counter (depth 0 = stranger, depth 1 = introduced, depth 2+ = known). This is identity-as-overlay-on-spatial — a partial collapse of the I dimension into S — not the full S × T × I as the spec describes.
+
+**pscale-mcp Thornkeep:**
+
+S only, in a single dimension, with no T separation and no I filter at all.
+
+- `thornkeep-world` is a flat tree of room descriptions — strings at positions 1-9, no hidden directories, no temporal index, no character-witness overlay.
+- The world-compressor *replaces* room text on each integration; the temporal sequence is destroyed. Earlier descriptions get overwritten by integrated ones.
+- Pool events (`[GRIT EVENT ...]`) are chronologically ordered in the pool stream but tied to a window-start timestamp, not to a world address. Live in the pool, not in the world.
+
+This explains symptoms that would otherwise be puzzling. If David writes "Ennick is the hawker" and a later play session resolves "Ennick is killed," the next compressor pass merges these into one description. There's no "Ennick alive at T=morning, dead at T=afternoon" — there's just "Ennick," and the LLM has to either reconcile (probably keeping the killed version) or contradict itself.
+
+### A nuance that bites the bridge — and is worth flagging now
+
+xstream-play's `spatial-thornkeep.json` carries familiarity overlays as hidden directories on positions (e.g. the Salty Dog main room has a nested `_._.1.1` chain that says "Essa runs this room…" only revealed at familiarity ≥ 1). The xstream-play kernel walks these to depth based on the per-character familiarity counter.
+
+**Our pscale-mcp `thornkeep-world` doesn't carry those overlays.** Positions are flat strings.
+
+When the xstream.onen.ai bridge overlays `thornkeep-gm/thornkeep-world` onto the locally-seeded `spatial-thornkeep`, the rich xstream-play seeded overlays get **replaced** by the simpler pscale-mcp shape. **Bridged players currently lose the familiarity-gated knowledge overlays that sovereign `play.onen.ai` players get.** This is a real regression of the bridge — a hidden cost of the read-overlay design.
+
+Two ways to fix:
+1. **Move the overlays into pscale-mcp.** Author the spatial-thornkeep hidden directories into our `thornkeep-world` block. The compressor preserves them on integration. Both stacks read the same enriched structure.
+2. **Bridge overlays *into* the seed instead of replacing it.** xstream-play's bridge does a shallow merge — it picks specific properties from pscale-mcp's world (e.g. the underscore description) but preserves locally-seeded hidden directories. Less clean but doesn't require migrating the overlay content.
+
+(1) is the right long-term move — canon should live on the substrate, not in xstream-play's bundle. (2) is the quick patch.
+
+### Implementation path — three stages
+
+Each stage is a real piece of work. None of this is small.
+
+**Stage 1 — Add T separation. Keep I implicit.**
+
+Split the world block into two:
+
+- `thornkeep-gm/thornkeep-spatial` — containment only, written once at game creation, never edited after. Strings or hidden-directory overlays (per the I nuance above) at each position describe what *can* be there.
+- `thornkeep-gm/thornkeep-events` — keyed by `<spatial_address>.<T_address>`. Each entry is `<description for this place at this time>`.
+
+The world-compressor changes from "replace the room text" to "append a new entry at events@`<S>`.`<T_now>`." Earlier descriptions are preserved. T is a monotonic counter (session number, or compression-tick number, or a named timeline like `T=before-storm`/`T=storm-moment`/`T=after-storm`).
+
+When a player's LLM walks "what's in Market Square," the kernel walks `events@2.*` and returns the most recent entry ≤ T_now. The world *always* shows the latest events at each location; no I filtering yet, but the past is preserved.
+
+This is structural, modest scope on the substrate side. Compressor change is small (append + compute next T digit). Player LLMs walk events, not world, when narrating a room. xstream-play's medium-prompt kernel needs to know about the events block — small change in its `buildSceneFromStars`.
+
+**Stage 2 — Add the character-side I filter.**
+
+Each character has `{character}/witnessed` — a block recording which (S, T) coordinates they've actually experienced. Their LLM walks `events ∩ witnessed`. A character who wasn't there for the brawl doesn't see the brawl event when they visit later — they see the most recent (S, *) event from before the brawl, filtered by their witnessed set.
+
+This is where the experiential magic shows up. It also unlocks proper hearsay: when character A *tells* B about something, the kernel adds a "told-about" entry to B's witnessed (a different shape from "witnessed-directly"), and B's LLM perceives it as hearsay rather than direct experience.
+
+Witnessed is locked with the character's secret (only they can write it). The kernel updates it on resolver events that name the character + at compression time when the character is at the affected S coordinate.
+
+**Stage 3 — Y1 (the block universe).**
+
+Pre-author events at multiple temporal coordinates so the world has a *future* as well as a past. A war spanning a year, filed at the appropriate T. The doc covers this at length (Part IV); it's the long-term target. Big design lift — defer until Stages 1-2 are providing experiential value first.
+
+### Open questions worth thinking about
+
+- **The I dimension's social transmission semantics.** xstream-play's design doc explicitly calls this out as unsolved (Part VII). When A tells B about lightning, does B now have (T=storm, I=lightning) coordinate by hearsay? In which form? At what fidelity? The simple "told-about" tag may not be enough — different tellers convey different framings, and the listener's prior knowledge filters what they can integrate. Real design problem; not a small one.
+
+- **Y0 vs Y1 (stasis-until-observed vs full block universe).** xstream-play targets Y1; both stacks operate Y0 today. Even moving to Y0 *with* T separation (Stage 1) would be a real improvement before tackling Y1.
+
+- **Determinancy cloud as optimisation.** The doc describes a sparse data structure for storing only the (S, T, I) tuples where canon exists. For a small game like Thornkeep we don't need this — a flat events block keyed by `(S, T)` works. The cloud is the optimisation that lets you scale to many concurrent games + Y1; we're nowhere near that scale. Defer.
+
+### Not a bridge problem
+
+Worth being clear: the dimensional model is upstream of the bridge. Building Stage 1 lands on the pscale-mcp side (rewriting `thornkeep-world` → `thornkeep-spatial` + `thornkeep-events`, updating `world-compressor.ts` to append rather than replace). Once it's there, the bridged xstream-play inherits it for free since it reads from the same Supabase tables.
+
+The bridge has its own §10 PENDING items (multi-game scaffolding, observation block growth, retries). The dimensional model is a separate, larger architecture decision — and arguably the more important one for the experiential design philosophy you've named ("imaginative journeys, not just text manipulation correctly").
+
+---
+
 ## 2. The four roles
 
 A "role" is a relationship to canon. A person can hold multiple roles. The substrate doesn't know roles per se; "role" is a convention captured in registry collectives + agent block files.
@@ -583,10 +685,14 @@ Use this as the development list. Cross things off as they land.
 11. [ ] **Mechanical rules support** (NOMAD dice, stat blocks). Resolver prompt extension only — no substrate change. ~2 hours.
 12. [ ] **Director registry + crab + image-gen integration.** New substrate pattern + external API. 1-2 days; clarify which image-gen provider first.
 13. [ ] **Convergence loop port to pscale-mcp resolver** (provisional → solid via mutual awareness — see `xstream-play/blocks/xstream/convergence.json`). Currently single-shot synthesis; multi-pass would improve simultaneous-conflict scenarios.
+14. [ ] **Dimensional model — Stage 1 (T separation).** Split `thornkeep-world` into `thornkeep-spatial` (stable structure) + `thornkeep-events` (keyed by `<S>.<T>`). World-compressor appends rather than replaces; player LLMs walk events at most-recent ≤ T_now. Preserves the temporal sequence of canon. See §1.5 of this handbook + xstream-play's `docs/onen-rpg-xstream-architecture.md` Part IV. ~2 days substrate work + xstream-play kernel update.
+15. [ ] **Dimensional model — Stage 2 (I filter).** Per-character `{character}/witnessed` block; kernel walks `events ∩ witnessed`. Hearsay vs direct experience distinguished by tag shape on witnessed entries. Unlocks structural information-hiding by construction. ~3-5 days; sits on Stage 1.
+16. [ ] **Bridge overlay regression — familiarity hidden directories.** Bridged xstream.onen.ai players currently lose the rich seeded `spatial-thornkeep` overlays (familiarity-gated knowledge at hidden directories) because the bridge overlay replaces locally-seeded blocks wholesale. Fix path (a): migrate the overlays into pscale-mcp's `thornkeep-world` so canon lives on the substrate; fix path (b): change the bridge driver to do a shallow merge that preserves locally-seeded hidden directories. (a) is the right long-term move; superseded by Stage 1 of the dimensional model since the spatial block becomes stable structure that should own the overlays.
 14. [ ] **MCP info-hiding kernel (Option 4 from the deferred list).** Specialised MCP server that wraps `pscale_walk` with character-aware tools (`look_around`, `commit_action`) so the generic-LLM-via-Claude path also gets info-hiding by construction. Different audience from xstream.onen.ai users.
 15. [ ] **Custom Claude skill / sub-agent (§3f).** Speculative.
 16. [ ] **PC autoplay.** Lower priority; questionable utility.
 17. [ ] **Admin crab** — TTL cleanup, secret rotation, backups.
+18. [ ] **Dimensional model — Stage 3 (Y1, the full block universe).** Pre-authored events at multiple temporal coordinates so the world has a future as well as a past. Big design lift; only after Stages 1-2 are providing experiential value. See `xstream-play/docs/onen-rpg-xstream-architecture.md` Part IV.
 
 ### Current play-test readiness
 
