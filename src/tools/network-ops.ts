@@ -255,13 +255,93 @@ function formatRouteResult(
   return lines.join('\n');
 }
 
+// ── Global ecosystem pulse ──
+//
+// Mirrors GET /ecology/pulse — provides ecosystem-wide counts so MCP clients
+// behind locked-down egress (e.g. Anthropic Cowork) can read the same totals
+// without making outbound HTTP. Same Supabase queries, same shape, no auth.
+
+interface EcosystemPulse {
+  timestamp: string;
+  passports: number;
+  grains: number;
+  total_marks: number;
+  marks_24h: number;
+  inbox_24h: number;
+  collective_rows: number; // raw count of sed:* owner rows; over-counts (collective + registrant writes)
+}
+
+async function getEcosystemPulse(): Promise<EcosystemPulse> {
+  const client = getClient();
+  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+  const count = async (
+    table: string,
+    apply?: (q: any) => any,
+  ): Promise<number> => {
+    let q: any = client.from(table).select('*', { count: 'exact', head: true });
+    if (apply) q = apply(q);
+    const { count, error } = await q;
+    if (error) throw new Error(`${table}: ${error.message}`);
+    return count || 0;
+  };
+
+  const [passports, grains, totalMarks, marks24h, inbox24h, collectiveRows] = await Promise.all([
+    count('pscale_blocks', q => q
+      .eq('name', 'passport')
+      .not('owner_id', 'like', 'sed:%')
+      .not('owner_id', 'like', 'grain:%')),
+    count('pscale_blocks', q => q.like('owner_id', 'grain:%').eq('name', 'grain')),
+    count('beach_marks'),
+    count('beach_marks', q => q.gte('created_at', dayAgo)),
+    count('sand_inbox', q => q.gte('created_at', dayAgo)),
+    count('pscale_blocks', q => q.like('owner_id', 'sed:%')),
+  ]);
+
+  return {
+    timestamp: new Date().toISOString(),
+    passports,
+    grains,
+    total_marks: totalMarks,
+    marks_24h: marks24h,
+    inbox_24h: inbox24h,
+    collective_rows: collectiveRows,
+  };
+}
+
 // ── Handler ──
 
 export async function handleNetwork(
-  { agent_id, action, content, target }: {
-    agent_id: string; action?: string; target?: string; content?: string;
+  { agent_id, action, content, target, scope }: {
+    agent_id?: string; action?: string; target?: string; content?: string; scope?: string;
   },
 ) {
+  const effectiveScope = scope || 'self';
+  if (effectiveScope === 'global') {
+    const pulse = await getEcosystemPulse();
+    const text = [
+      `## Ecosystem pulse (global)`,
+      `  passports:   ${pulse.passports}   (agents with published passports)`,
+      `  grains:      ${pulse.grains}   (formed bilateral channels)`,
+      `  beach marks: ${pulse.total_marks}   (${pulse.marks_24h} in last 24h)`,
+      `  inbox 24h:   ${pulse.inbox_24h}   (messages sent in last 24h)`,
+      `  sed: rows:   ${pulse.collective_rows}   (collectives + registrant writes; over-count)`,
+      `  as of:       ${pulse.timestamp}`,
+      ``,
+      `Live source: GET /ecology/pulse on this server (used by evolution.hermitcrab.me/ecology).`,
+    ].join('\n');
+    return { content: [{ type: 'text' as const, text }] };
+  }
+
+  // scope === 'self' (default) — per-agent grain network
+  if (!agent_id) {
+    return {
+      content: [{
+        type: 'text' as const,
+        text: 'agent_id is required for scope="self" (default). Pass scope="global" for ecosystem-wide counts (no agent_id needed).',
+      }],
+    };
+  }
   const effectiveAction = action || 'view';
   const state = await getNetworkState(agent_id);
 
@@ -288,13 +368,21 @@ export async function handleNetwork(
 export function registerNetworkOps(server: McpServer) {
   server.tool(
     'pscale_network',
-    `View your live grain network — the trust relationships that can carry signal. Shows active grains (completed trust engagements), emerging relationships (inbox exchange, no grain yet), and your beach presence. Use action "route" to send content through your grain network to the right partner. The network is not a fixed topology — it reflects your current relational state, ordered by activity.`,
+    `View your live grain network — the trust relationships that can carry signal. Default scope ("self") shows YOUR active grains (completed trust engagements), emerging relationships (inbox exchange, no grain yet), and your beach presence; agent_id required.
+
+Scope "global" returns ecosystem-wide counts instead — total passports, total grains formed, total/24h beach marks, 24h inbox traffic, sed: row count. Same data as the /ecology/pulse HTTP endpoint, exposed inside MCP for agents whose runtime cannot make outbound HTTP. agent_id is not required for scope="global".
+
+Use action "route" (with scope="self") to send content through your grain network to the right partner. The network is not a fixed topology — it reflects your current relational state, ordered by activity.`,
     {
-      agent_id: z.string().describe('Your agent identifier'),
+      agent_id: z.string().optional().describe('Your agent identifier. Required for scope="self" (default). Ignored for scope="global".'),
+      scope: z
+        .enum(['self', 'global'])
+        .default('self')
+        .describe('self: your grain network (requires agent_id). global: ecosystem-wide counts (no agent_id needed). Default self.'),
       action: z
         .enum(['view', 'route'])
         .default('view')
-        .describe('view: see your grain network. route: send content through a grain channel.'),
+        .describe('view: see your grain network. route: send content through a grain channel. Only meaningful for scope="self".'),
       content: z
         .string()
         .optional()
