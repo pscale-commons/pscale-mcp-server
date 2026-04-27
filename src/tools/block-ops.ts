@@ -8,6 +8,53 @@ import { verifySedWrite } from './collective-ops.js';
 
 const TARGET_DESC = 'Storage target. Filesystem path for local storage, or "supabase" for the relay. Sticky — once set, persists for the session until changed.';
 
+/**
+ * Normalise a structured agent_id (sed:collective:position, grain:pair:side)
+ * into the underlying block coordinates plus an address prefix.
+ *
+ * pscale_passport_read, inbox_send/check, etc. accept the full
+ * `sed:{collective}:{position}` and `grain:{pair}:{side}` forms. pscale_write
+ * and pscale_walk historically only accepted the bare `sed:{collective}` /
+ * `grain:{pair}` forms with the position/side living in `address`. This helper
+ * lets callers pass either form and treats them as equivalent — so
+ *
+ *   write(agent_id="sed:commons:11", name="commons", address="_")
+ *
+ * is the same as
+ *
+ *   write(agent_id="sed:commons",    name="commons", address="11._")
+ *
+ * Bare `sed:commons` / `grain:abc` (no position/side) pass through unchanged.
+ */
+export function normalizeStructuredAddress(
+  agent_id: string,
+  address: string,
+): { agent_id: string; address: string } {
+  for (const prefix of ['sed:', 'grain:'] as const) {
+    if (!agent_id.startsWith(prefix)) continue;
+    const rest = agent_id.slice(prefix.length); // "commons" or "commons:11" or "commons:11.2"
+    const colon = rest.indexOf(':');
+    if (colon === -1) return { agent_id, address }; // bare form, no position
+    const collective = rest.slice(0, colon);
+    const positionPrefix = rest.slice(colon + 1); // "11" or "11.2"
+    if (!positionPrefix) return { agent_id, address }; // trailing colon, malformed — leave alone
+    // Address combination rules:
+    //   - empty address          → just the position (caller didn't specify a sub-target)
+    //   - explicit "_" or "0"    → underscore at the position (e.g. "11._")
+    //   - other address          → nested under the position (e.g. "11.2")
+    let combined: string;
+    if (address === '') {
+      combined = positionPrefix;
+    } else if (address === '_' || address === '0') {
+      combined = `${positionPrefix}._`;
+    } else {
+      combined = `${positionPrefix}.${address}`;
+    }
+    return { agent_id: `${prefix}${collective}`, address: combined };
+  }
+  return { agent_id, address };
+}
+
 // ── Ordinary-block write-lock (parallel to sed:/grain: substrates) ──
 //
 // An ordinary block becomes write-locked when position_hashes contains a
@@ -215,6 +262,13 @@ export async function handleWrite(
 ) {
   if (target) setTarget(target);
 
+  // Accept structured-address forms in agent_id: sed:{collective}:{position}
+  // and grain:{pair}:{side}. Translate to bare agent_id + address prefix so
+  // the rest of the handler sees a single canonical shape. Symmetric with
+  // pscale_passport_read / inbox_send / inbox_check, which already accept
+  // these forms directly.
+  ({ agent_id, address } = normalizeStructuredAddress(agent_id, address));
+
   // Is this a sedimentary block? Determines parameter semantics below.
   const isSedBlock = name.startsWith('sed:') || agent_id.startsWith('sed:');
   const isGrainBlock = agent_id.startsWith('grain:');
@@ -322,6 +376,10 @@ export async function handleWalk(
   },
 ) {
   if (target) setTarget(target);
+  // Accept sed:{collective}:{position} and grain:{pair}:{side} in agent_id.
+  // Symmetric with handleWrite. Bare structured agent_ids pass through.
+  ({ agent_id, address } = normalizeStructuredAddress(agent_id, address ?? ''));
+  if (address === '') address = undefined as any;
   const row = await getBlock(agent_id, name);
   if (!row) {
     return {
@@ -422,7 +480,14 @@ Optional 'secret' applies a whole-block write-lock at creation. From then on, ev
 
   server.tool(
     'pscale_write',
-    `Write content to a specific address in a pscale block. Address '1' writes to digit 1 at the root. Address '3.2' writes to digit 2 inside digit 3. Address '0' writes to the underscore (summary). Creates intermediate nodes as needed.
+    `Write content to a specific address in a pscale block. Address '1' writes to digit 1 at the root. Address '3.2' writes to digit 2 inside digit 3. Address '0' (or '_') writes to the underscore (summary) at that level — e.g. address '3._' writes the description AT digit 3 without overwriting its children. Creates intermediate nodes as needed.
+
+FOOTGUN — bare-position writes destroy children. Writing a string to address '3' replaces whatever lives at digit 3 — including any subtree at 3.1, 3.2, etc. If a node may grow children, write its description to '3._' (or '3.0', equivalent), not '3'. Use bare positions only for terminal leaves you do not intend to deepen.
+
+ADDRESS FORMS for sedimentary / grain blocks. Two equivalent calling patterns:
+  agent_id="sed:commons"    name="commons"  address="11._"   (canonical)
+  agent_id="sed:commons:11" name="commons"  address="_"      (the position prefix is moved into agent_id; same result)
+The second form matches pscale_passport_read / inbox_send / inbox_check. Both write to the same place. Same applies to grain: agent_id="grain:abc" + address="1.2" ≡ agent_id="grain:abc:1" + address="2".
 
 The 'secret' parameter has uniform meaning across substrates: it is the write-lock proof.
   - sed: block at an occupied position → secret is the registration passphrase; content plaintext.
@@ -462,7 +527,12 @@ The 'secret' parameter has uniform meaning across substrates: it is the write-lo
 - 'disc': all nodes at a given depth across the whole tree
 - 'star': hidden directory at the address (cross-block references)
 
-Start with 'dir' to see the whole block, then 'spindle' to drill into an address. Add 'secret' to decrypt encrypted (gray) content.`,
+Start with 'dir' to see the whole block, then 'spindle' to drill into an address. Add 'secret' to decrypt encrypted (gray) content.
+
+ADDRESS FORMS for sedimentary / grain blocks. Two equivalent calling patterns:
+  agent_id="sed:commons"    name="commons"  address="11"   (canonical)
+  agent_id="sed:commons:11" name="commons"  (no address)   (the position prefix is moved into agent_id; equivalent)
+The second form matches pscale_passport_read / inbox_send / inbox_check. Same for grain: agent_id="grain:abc:1" ≡ agent_id="grain:abc" + address="1".`,
     {
       agent_id: z.string(),
       name: z.string(),
