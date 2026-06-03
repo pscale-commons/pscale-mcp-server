@@ -1,0 +1,31 @@
+{
+  "_": "PROVISIONAL sunstone patch (2026-06-03) — adds the cross-block floor-alignment law. Apply to the sunstone source in pscale-commons/bsp-mcp-server, then redeploy. Voice: zeroth person, substantive underscores (sunstone 8). Self-references use single-dot pscale form (1.56, 5.6, 9.2, 5.1) to match the block's existing style; never two dots. Addresses below are pscale numbers (single dot); their walks are given in the notes.",
+
+  "additions": {
+    "1.56": {
+      "note": "New position under branch 1.5 (canonical addressing). Walk 1,5,6. The mechanical alignment rule at the addressing layer.",
+      "content": "Cross-block addressing aligns at the floor, not at the leftmost digit. Two addresses drawn from two different blocks name corresponding positions only when their decimal points coincide — pscale 0 against pscale 0 — so a shorter left-of-decimal pads with leading zeros to the wider floor before any digit is matched. Matching left-aligned by walk step is the error: it pairs a coarse position in the deeper block with the floor of the shallower, conflating two scales. The padding is the same operation supernest performs structurally (1.6.3): in address space it is leading zeros, in block space it is wrapping the shallower block in an underscore until the floors match. Because pscale is invariant under that wrapping, the alignment changes how an address renders, never which semantic position it reaches."
+    },
+
+    "5.6": {
+      "note": "New position under branch 5 (composition). Walk 5,6. The operation as a ninth-and-a-half angle: composition by floor rather than by reference.",
+      "content": "Floor alignment composes two blocks by their shared pscale axis rather than by reference. Star (5.1) crosses a block boundary by entering a hidden directory and following a name; floor alignment crosses it by laying both blocks against the floor as a common plane and matching position to position at equal pscale. Because pscale is invariant under supernest, the floor of every block is the same coordinate — pscale 0 — and any two blocks share that origin without negotiation. The operation has the dot product's shape: index both blocks by pscale, contract over the shared axis, accumulate the per-level relation into one result; mismatched floors are mismatched dimensions, resolved by supernesting the shallower up to the common floor, which is leading-zero padding in address space exactly as a dot product zero-pads the shorter vector. From the aligned frame, comparison yields a per-pscale delta, merge yields one block at the common floor with each side contributing at its own scale, and resonance yields a scalar — the summed similarity of two blocks where their scales coincide. Walk depth cannot do this work: it is block-local and pairs positions that do not correspond. The floor must be a shared calibration for the result to carry meaning — two blocks both anchored at human scale compare limb to limb and city to city, while two blocks whose pscale 0 means different things align structurally but not semantically (9.2). Alignment is necessary; shared mapping is what makes it sufficient."
+    }
+  },
+
+  "replacements": {
+    "branch_5_underscore": {
+      "note": "Branch 5 hidden-directory underscore (the '_._' summary). Append the floor-alignment sentence so the branch names both composition paths. Current text preserved; new final sentence added.",
+      "new_text": "As composition. Star walks into a hidden directory; the primitive composes with itself across block boundaries. Block references in hidden directories enable cross-block ecologies — a spatial block reaches an identity block reaches a concern block. Self-reference encodes control loops in data: 0− underscores serve as reference signals, digit children as perceptual signals, the gap between them as the error driving the loop. The loop stabilises as a soliton — a standing wave where reference and perception lock in nonlinear balance. The agent is the wave that persists; the substrate is the medium it moves through. Reference is one way two blocks meet; the floor is the other — floor alignment (5.6) composes blocks by laying them against the common pscale plane and computing position against position, the binary companion to supernest's unary change of basis."
+    }
+  },
+
+  "apply_via_bsp": [
+    {
+      "note": "These calls target the writable source beach that serves sunstone, NOT the read-only 'pscale' sentinel. Replace AGENT_ID/BLOCK/SECRET with the bsp-mcp-server source location once known. spindle is the walk; content shape is a point (string) at each leaf.",
+      "write_1.56": "bsp(agent_id=<sunstone-source>, block='sunstone', spindle='1.56', pscale_attention=<P_end>, content='<1.56 content above>', secret=<SECRET>)",
+      "write_5.6": "bsp(agent_id=<sunstone-source>, block='sunstone', spindle='5.6', pscale_attention=<P_end>, content='<5.6 content above>', secret=<SECRET>)",
+      "write_branch_5_underscore": "bsp(agent_id=<sunstone-source>, block='sunstone', spindle='5.0', pscale_attention=<P_end>, content='<branch_5 underscore new_text above>', secret=<SECRET>) — walk 5,0 addresses branch 5's underscore object's chain string"
+    }
+  ]
+}
