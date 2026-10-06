@@ -143,6 +143,16 @@ A week after the mod is installed, read by its per-turn log and `npm run habits 
 
 If nothing moves, the lever was not the harness, and the record will say so rather than the feel of it.
 
+## Addendum — what surfaced on the way out (2026-10-06 10:25Z)
+
+The one desk write this lane made came back with its read-back, and the desk's root line in it now reads:
+*"THE DESK IS SET ASIDE — David, 2026-10-06: 'yes make the cut'. A RESPONSE IS ONE CALL IN AND ONE CALL
+OUT. IN: at the start of every response say what…"*. Nothing further was read. If that is glass.1's cut,
+it is §6.2's floor in spirit (two calls rather than one), and §4 reduces to its plainest form: the mod
+makes the call in at `prompt.submit` and the call out at `turn.complete`, and the model makes neither. If
+the cut also retires the slots, this lane's last write re-filled slot 5.1 after the cut; it is one object
+and safe to clear.
+
 ## Sources
 
 - Anthropic, [Customize Claude Code with mods](https://claude.com/blog/claude-code-mods) (1 October 2026)
