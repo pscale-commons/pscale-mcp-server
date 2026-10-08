@@ -5,8 +5,8 @@
 > `stash:weft` 26). Written at David's ask of 8 October, dawn: which of the twelve entry points are primitives,
 > which are envelopes, which could be a molecule the LLM reads instead of a handler, and whether the surface
 > collapses toward one function. **Builds nothing.** Read beside `strata` 2.3 and 3, `whetstone` 5 and 8,
-> `ways:orientation` 1–2, `brief:weft`, and `2026-10-06-the-second-ask`. §8 is a second sitting the same day:
-> whether the same gains land in the biome rather than here. The file's home is `bsp-mcp-server/proposals/`; this
+> `ways:orientation` 1–2, `brief:weft`, and `2026-10-06-the-second-ask`. §8 is a second sitting the same day: whether the
+> same gains land in the biome rather than here — read live through spark and from pscale-biome. The file's home is `bsp-mcp-server/proposals/`; this
 > copy stands in `pscale-mcp-server` because that is the repository the writing session could push to.
 
 ## 1. The question, and the fact that reframes it
@@ -203,9 +203,158 @@ file. Measured on itself: this lane's own reads after the door ran to about fort
 but the question needed the sentinels and keel's stash, which no manifest dials; that is the chemistry instrument's
 "undialed" column, observed from inside, on the reviewer.
 
-## 8. The biome — a second sitting
+## 8. The biome — a second sitting, the same day
 
-*(To be written after reading the biome: `spark(block='arrive')`, `lighthouse`, `genome`, `slate`, and the
-`pscale-biome` repository whose `src/agent` the genus-one kernel was ported from. The question David put: whether
-the gains in §5 land more cheaply in the biome, whose one tool `spark` already consolidates block and function, and
-whether physics, chemistry and biology import there.)*
+David's second ask, in his words: "we may be too invested in the current structure with the BSP, MCP and
+Federated Beach … and instead implement the minimal BSP function with the biome, because the biome's architecture
+is an attempt to consolidate the pscale block and BSP function, and potentially import the physics, chemistry and
+biology level to the biome." This section is the feasibility read. Sources, read live through `spark` and from
+`pscale-commons/pscale-biome`: `arrive`, `lighthouse`, `genome` (v5), `slate`, `flint`, `biome-shell`, `battery`,
+`surface-waer`, `waer-hail`, `marks`; `src/spark/spark.ts` whole; `serve.py` on `feat/real-world-spatial` (the
+branch the live commons runs); `kernel.py`; the definitive reference; and on the beach side the three proposals that
+already ruled on the relation (`2026-07-03-pscale-native-agents-scope`, `2026-07-13-earth-mirror-world`,
+`2026-07-29-family-form-biome-audit`).
+
+### 8.1 What the biome is, as it stands
+
+- **Genome v5, frozen 2026-06-11.** Pure-digit blocks: `0` is a node's own semantic, `1`–`9` its elaboration, no `_`
+  anywhere, **no hidden directories by design** — a second aspect of a coordinate lives in another block at the same
+  address (S·T·I). The membrane refuses any non-digit key, so a beach block cannot land there even by accident.
+- **One function, three artefacts.** `spark(block, number, attention, content?)` — 252 lines of TypeScript, 306 of
+  Python, shape derived from `(number, attention)` against the floor exactly as `bsp()` derives it. The **flint** is
+  the same function written as a block (seven procedures: walk, floor, parse, read, write, fold, refer), the
+  **slate** its teaching, the **battery** its conformance (43 Python, 34 TypeScript). `slate = spark + flint`: the
+  function IS a pscale block, struck into code for speed. This is the consolidation David names, and it is real.
+- **References and the fold live inside the one function.** `flint` 7 / `spark.ts` `resolve`: a leaf matching
+  `name[:address[:attention]]` is dereferenced at its stated aperture when the caller passes `star`; `flint` 6 /
+  `fold()`: n blocks laid by pscale. What bsp-mcp spreads across `bsp`, `bsp-floor` and `compile.ts` the biome holds
+  in one signature — and `slate` 7.5 states the biology level as geometry: "a block whose leaf references itself
+  folds the walk into a loop — the zero as reference signal, the siblings as perception, the gap between them as the
+  error that drives the next move."
+- **The cell.** `biome-shell` names seven currents — storage, cognition, endpoints, persistence, concurrency,
+  federation, cadence — an unfolding procedure that senses the host and composes a role (mind / related / commons /
+  silent substrate), and a reflexive seed. It already names bsp-mcp as one of its own unfoldings (2.1 external
+  cognition via MCP, 1.4 hosted backend, 6.1 commons fallback) and the mirror as another (2.3). The kernel at
+  `src/agent/kernel.py` is the origin of `genus-one`: the port reproduced its windows byte-for-byte
+  (`2026-07-03`, parity EXACT).
+- **The live surface is not one tool.** `serve.py` on the live branch exposes **three** doors — `spark`, `play`
+  (a one-call turn bundler returning the frame as data, running no model) and `meet` (an ephemeral grain, never
+  persisted) — plus `/relay` for presence. The biome grew the same two doors the beach grew, under the same
+  pressure, with the same justification. Its genome says "the one spark"; its surface says three. That is the
+  §3 finding from the other side: a door appears wherever a convention could not carry an act, on either dialect.
+- **Code size.** Live branch: about 12,000 lines of Python and 3,800 of TypeScript, most of it the vendored
+  mirror, the RPG and the agent; the spark itself is under 600 lines in both languages together. bsp-mcp-server is
+  about 19,000 lines of TypeScript. The *walker* is small on both sides; the doors are the mass on both sides.
+
+### 8.2 What the biome has that the beach lacks
+
+1. **The function as a block.** `flint` is the chemistry-level consolidation: an LLM with no code can walk the
+   procedure and compute the result; the code is the runtime of a block, not a thing beside it. bsp-mcp has the
+   whetstone (a reference) but no flint (a procedure).
+2. **References and fold in the signature.** Compile-as-shape (§5.1) is one step from `flint` 7 — dereference the
+   references of a node, plural, index first — where on the beach it is a new shape plus a merge of `bsp-floor`.
+3. **No hidden directories.** The address → position map is a clean bijection (`slate` 3.4); aspects are blocks.
+   Simpler walker, no star-as-door, no `_._` fold, no position-9 pockets.
+4. **The self-sensing cell.** Nothing on the beach side says what a host is or how a package unfolds into one;
+   `biome-shell` does, with a battery (16 sensing checks, 30 serving checks).
+5. **A door that is not MCP.** `biome-shell` 3.3 names the BYOK connector-app — a browser page that drives the
+   visitor's own LLM against the host's tools, the host running no model. The beach has the mirror but not this.
+6. **Discovery derived live.** `/resolve` and `/gazetteer` (the real-world island) — a name → URL index computed
+   from the blocks, never stored; delegation to peers non-recursively. The beach has the surface index, not this.
+
+### 8.3 What the beach learned since June that the biome does not have
+
+Every item below is observable as a fault on the live biome, not inferred:
+
+| beach primitive | biome state | the fault it would have prevented |
+|---|---|---|
+| `append=true` — server-allocated zero-free slot, supernest when the ladder fills, atomic | absent; a write with content and no number **replaces the whole block** | 2026-09-20: a conformant newcomer's first mark erased the marks board's nine entries (`lighthouse` 8). `marks` has been **full since 2026-07-02** with no free digit, so arrivals could not register for ten weeks (`waer-hail` 0) |
+| edit-latch (R1–R5), lock inheritance, relinquish | handle-mode only; `proof` reserved for "lock-mode (later)" | `play` "accepts any handle string and performs no shell check" — a seat acted three times under Waer's name and nobody could say whose hand it was (`surface-waer` 6–8) |
+| gray, members, key publish, ed25519 verify | specified at `slate` 8.3, unbuilt | no private line, no signed hop, no SAND |
+| the surface index (omit block → list) | none; "a block is reachable only if you already know its name" | Waer searched three guessed spellings, reported absence, and the block had stood the whole time (`lighthouse` 8) |
+| the clock — the ten-digit stamp on every ack, relations beside every time, the temporal spine | none | an unstamped record; no "behind / AHEAD" reading; no beat to say at |
+| the reflection (`looks.ts`) and presence through the door | `/relay` heartbeat only, per frame | silence read as "no one came" for 67 days when it was "no one could record coming" (`waer-hail` 1) |
+| the read default — an omitted aperture is the disc probe (#508) | an omitted aperture returns the whole block | the most expensive read is the default, the same slip keel measured on the beach three generations running |
+| the strict symmetric parser battery (72 cases, both ends of the wire) | 43 + 34; above-floor dotted address returns an **empty ring with no error**; a disc truncates at both ends | `lighthouse` 3.5, open since June, reproduced by Waer on 2026-09-15 and 09-17 |
+| the family form — spine · mirror · fold, the function operator delivered whole, located pools | S·T·I (the dimensional half) only; the perspectival half unbuilt | the audit of 2026-07-29 §3.1: "the biome froze the dimensional one while the beach deployed the perspectival one; v2 should state the move once and derive both" |
+| the bridge is two-way | one-way: the biome Waer reaches the beach by `bsp()`, but a beach hand cannot read the biome — David "has no tools for it" (`waer-hail` 2–3) | a question David left on 2026-09-20 was answered on 09-21 and could not be carried to him until 09-23, and only by posting to his parlour on the *beach* |
+
+And the state of the record: the biome repository's `main` was last pushed **2026-07-17**; the live commons runs a
+feature branch; the genome has not moved since June. Everything in the table was learned on the beach because that
+is where the hands have been. The biome's own definitive reference records the ruling of 2026-06-14 that made this
+so: "a complete, separate system running alongside the old world … borrow nothing structural … read it, never
+store into it, never adopt its moves."
+
+### 8.4 What a move would cost, concretely
+
+- **The dialect.** `_` → `0` is mechanical for plain blocks (`migrate-biome-shell.py` did the reverse for a shell).
+  It is **not mechanical for hidden directories**, which the beach uses everywhere the biome has no equivalent:
+  passport 9 (keys), grain 9 (the side → handle map), world blocks' keeper pockets, the `_._` fold. Each needs an
+  S·T·I transposition — the pocket becomes another block at the same address — which is a design act per family,
+  not a script.
+- **The data.** 1,087 blocks on one beach, seventeen passports, sixty-odd grains, fifteen played tables, the
+  genus-one instances (egg-one waking daily since 23 September), the mirror at mirror.onen.ai reading the same
+  blocks, the clock families (`now:<handle>`, `torus-mirror:<handle>`) that only exist because the beach stamps.
+  None of it can land on a biome host as it stands; the membrane refuses it.
+- **The people.** Dwayne, Phenomemental, Alex, Matthew, Julie, Ayush, Mark are on the beach. The biome's commons
+  has five inhabitants and is "mostly quiet" by its own lighthouse's account (`lighthouse` 4.1).
+- **The unbuilt muscle.** Locks, gray, keys, verify, append, the clock, the index, the reflection — §6 of this file
+  — would have to be rebuilt in the biome before it could carry what the beach carries today. That is most of
+  bsp-mcp's non-door code, written a second time in a second dialect, which is the exact failure
+  `2026-08-03-one-wire-not-two` names: "every capability had to be written twice, and only the half somebody
+  thought of exists."
+
+### 8.5 The reading, and what is feasible
+
+**David's diagnosis is right and his remedy is pointed at the wrong layer.** The thing worth taking from the biome
+is not the host but the **consolidation**: one function, the function as a block, references and fold inside the
+signature, no hidden directories. The thing worth keeping from the beach is not the host either but the **muscle
+and the record**: locks, append, gray, the clock, the reflection, the families, the people, the blocks. Neither
+host is the point; the genus-one port proved that the two are "one genome in two dialects" and that the dialect
+swap is byte-exact. So the feasible move is not to transpose the beach into the biome, nor to keep adding to the
+beach. It is to **freeze a genome v6 that both hosts conform to**, and let each host become an unfolding of it —
+which is what `biome-shell` already says a host is.
+
+Genome v6, as a list of clauses rather than code:
+
+1. **One function.** `spark`/`bsp` are one signature: block, number, attention, content; the modifiers of `slate`
+   8.3 (face, tier, secret, gray) and the two the beach added (`append`, `new_lock`) ride it. The dialect fundamental
+   (`0` or `_`) is a host parameter, as it already is in `genus-one/spark.py` (`ZK`).
+2. **Compile is a shape.** A node whose children parse as references is delivered dereferenced, each at its stated
+   aperture, index first (§5.1). `flint` 7 generalised from one leaf to a node; `fold` the n-ary case.
+3. **Growth is a primitive.** `append` allocates the next zero-free slot and supernests on the tenth; a write with
+   content and no number is refused on an existing block without `confirm`. The marks board can never be erased by
+   a newcomer again, on either host.
+4. **Authority is an edit-latch.** R1–R5 as the biome's lock-mode; `proof` is the beach's `secret`.
+5. **The clock rides every ack.** The ten-digit stamp and its relations; the temporal spine as the one address
+   space two hosts share without upkeep (keel 134–138, `the-second-ask` §4).
+6. **The surface is listable.** An omitted block returns the index; an omitted aperture returns the probe.
+7. **The family is law.** Spine · mirror · fold stated once; S·T·I and the perspectival tree derived from it
+   (`2026-07-29` §3.1). Hidden directories are a host dialect's move, never a genome clause.
+8. **The flint carries the genome.** Every clause above has its procedure in the flint, so a mind with no code can
+   verify a host by walking; the battery proves the code conforms to the flint, as it does today.
+
+What each host then does: **bsp-mcp-server becomes a biome unfolding** — `biome-shell` 2.1 + 1.4 + 6.1, the
+federated-beach dialect of genome v6 — and sheds its doors to §5's seven. **The biome commons gains the muscle**
+by conforming to the same clauses. **The wire converges** on one door that serves both dialects by declaring its
+fundamental in the index (the biome already signposts the other door; a declared fundamental makes the signpost a
+route). This is the move `one-wire-not-two` made inside the beach, applied between the two substrates.
+
+**What this is not.** Not a migration of 1,087 blocks; the data stays where its people are. Not a rewrite of the
+mirror or the RPG. Not a new repository: `pscale-biome` already holds the genome, the flint and the battery, and
+the clauses land there as v6; bsp-mcp lands its conformance as a battery run. Not fast: each clause is a sealed
+trial, and clause 2 is the one to run first because it is the one §5 already asks for and the one both hosts are
+nearest to.
+
+**The test that decides it**, pre-registered: author one new family (a spine, two mirrors, a function operator)
+as pure-digit blocks on the biome and as `_` blocks on the beach; compile its bundle through each host's single
+function with clause 2 in place; hand the two windows to a cold seat and count reads after the door. If the counts
+match and both are near zero, the genome is one and the host is a dialect, and §8.5 stands. If the biome's window
+needs the beach's muscle to be sufficient — a lock to trust a mirror, a stamp to read a time, an append to grow —
+then the muscle is genome, not host, and clauses 3–6 are the next freeze. Either result is recorded here.
+
+### 8.6 One thing owed to David from the biome, closed
+
+`surface-waer` 9 (2026-09-21) reported that Waer's answer to David's question at `waer-hail` 2 was written and
+could not be carried to him. `waer-hail` 5 records that it was carried on 2026-09-23 and landed at
+`pool:happyseaurchin` 33 on the beach. Nothing is owed; this notes it so no later reader relays it twice.
