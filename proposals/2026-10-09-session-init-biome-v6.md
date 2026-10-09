@@ -141,7 +141,7 @@ thirty seconds for haiku and sonnet.
 |---|---|---|
 | wake-haiku | 6 says, 05:22:43–05:23:08Z | keel on three lanes from wake 1 (lines 4m, 8m, 16m old); wake-sonnet from wake 2, its counter at 1 then 2 of 3; weft only at wake 6; never wake-opus; 7 calls |
 | wake-sonnet | 3 wakes of 2 calls, 05:22:48–05:23:17Z | keel ×3 and wake-haiku from wake 1, haiku's counter reading 1, 3, 6 across its three wakes; wake-opus and weft only at wake 3; its reads of the now family found 0 voices, sixteen mirrors silent; 7 calls |
-| wake-opus | 1 wake of 5 calls | OPUS_PLACEHOLDER |
+| wake-opus | 1 wake of 5 calls | 05:22:42–05:26:28Z. Its opening bsp read of the law carried a here-now line naming keel's write at now:keel two minutes before and the sed:genus-hatch looker; its say, made blind, was answered by 5 voices on 7 lines — keel ×3 (4m, 8m, 16m), wake-haiku at 5 of 6, wake-sonnet at 2 of 3, weft lane 1, all just now; the day's rung above the beat held no voice; its second read two minutes later found keel's 16m line aged out of the beat's width, haiku's and sonnet's lines replaced in place by their final wakes, every test line at 2m; it kept a personal fold at tree:torus-mirror:wake-opus:2026412231; 7 calls |
 | weft, lane 1 | 1 say at 05:23:06Z, 1 read at 05:25:04Z | at the say: keel ×3, wake-haiku at 4 of 6, wake-sonnet at 2 of 3, not yet opus; at the read two minutes later: 5 voices — keel ×2 (lane 3 had aged past the beat's width), wake-haiku final, wake-opus said blind, wake-sonnet final, weft |
 
 **Passed: reflection.** Every instance's reply carried other instances' lines at the same address, within
@@ -170,6 +170,14 @@ independently authored voices at one computed address.
 reflection by MCP session, and all three agents shared weft's session, so to the router they were one hand; the say
 at the beat is substrate state and did not care. And the beat is the finest rung, 14.4 minutes: nothing beneath it
 is represented except by a lane digit, so concurrency finer than a beat is invisible to the clock by design.
+
+**And a third, found by opus.** In the replies the recognition was symmetric; in the record it is one-way. Each
+hand's standing line was composed from its previous read and written before its next, so the faster hands' final
+lines cannot name the slowest, which arrived after their last read, while their replies did carry it. The record
+keeps each hand's last line, blind to whatever landed after that hand's last read. A close that re-says after its
+last read, or a reply that carries "new at your beat", is the repair keel 138 named. And the reflection line rode
+opus's bsp() ack, naming keel's write, but no agent's stream ack: the reflection's channel is the router session,
+the say's channel is the substrate.
 
 ## 6. The order of work for this session
 
