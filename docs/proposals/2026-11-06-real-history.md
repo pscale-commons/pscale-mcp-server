@@ -33,7 +33,7 @@ The sundial states the general law at `pscale://sundial` 8: "Space, time and ide
 
 The earth world is at `earth.beach.happyseaurchin.com` and its law is `function:earth`. It calls itself "the mirror world. Not a fiction to inhabit: a reflection of the person's real day, held true."
 
-- **The map**, `spatial:earth` (floor 11). The keeper mints it from people's own mirrors (`function:earth` 7.2). It grows by mirror and fold, and never by anyone writing the map. **Scotland** stands at `31117`, with Glasgow, Edinburgh (`311172`) and Aberdeen; **Dundee is not there yet**. **Portugal** stands at `31144`, with Lisbon and Porto.
+- **The map**, `spatial:earth` (floor 11). The keeper mints it from people's own mirrors (`function:earth` 7.2). It grows by mirror and fold, and never by anyone writing the map. **Scotland** stands at `3117` (full width `31170000000`), with Glasgow, Edinburgh (`31172`) and Aberdeen; **Dundee was not there** until this lane minted it (see "Started", below). **Portugal** stands at `3144` (`31440000000`), with Lisbon and Porto. *(The first version of this note wrote these with an extra 1, as `31117`, `311172` and `31144`; corrected the same morning.)*
 - **The anchors**, `geo:earth` (latitude and longitude per place). **The tally**, `census:earth` (who stands where; names show only while 24 or fewer stand under an address).
 - **The identity spine**, `identity:earth`. These are group perspectives at the map's addresses: Ceidio is held as "home for good", "a year's residence", "a house held from a distance", "the land as work", and so on.
 - **David's own mirrors there**:
@@ -86,14 +86,14 @@ The clock addresses are full width. The earth addresses that exist are marked; t
 
 | told at (clock) | resolution | place (earth) | the line |
 |---|---|---|---|
-| `1969000000` (a day, if he gives his birthday) | the year | Scotland `31117` → Dundee *(to mint; the next free digit under Scotland is 4, so `311174…`)* → the Maryfield Hospital site | Born at Maryfield Hospital. |
-| a season of 1970, e.g. `1970100000`, January to March (on its own, `1970000000` reads as the decade; sundial 3.4) | season | Portugal `31144` → *(the town, his word)* | To Portugal. |
-| `1975000000` | year | Dundee → *(the campsite, his word)* | Back to the UK; a campsite for a few years. |
+| `1969000000` (a day, if he gives his birthday) | the year | the site of Maryfield Hospital, `31174010400` (minted) | Born at Maryfield Hospital. |
+| a season of 1970, e.g. `1970100000`, January to March (on its own, `1970000000` reads as the decade; sundial 3.4) | season | Portugal `31440000000` → *(the town, his word)* | To Portugal. |
+| `1975000000` | year | the UK `31100000000` → *(the campsite: where, his word)* | Back to the UK; a campsite for a few years. |
 | `1970000000`, "about 1977–78" | decade | Dundee → *(ward)* → Maryfield Terrace → *(the house, his own mirror; the number perhaps sealed)* | Moved to Maryfield Terrace. |
 | the late 1970s to 1982 | decade / year | Dundee → Clepington Primary School | Clepington Primary. |
 | "about 1979–81", P6–P7 | decade / year | the hospital site, **state: ruins** | Walking across the ruins to school, alone. |
 | `1982000000` → `1988000000` | year | Dundee → Morgan Academy | Morgan Academy. |
-| `1988000000` → `1992000000` | year | Edinburgh `311172` → the University | Edinburgh: social anthropology, the pivot his passport already names. |
+| `1988000000` → `1992000000` | year | Edinburgh `31172000000` → *(the University)* | Edinburgh: social anthropology, the pivot his passport already names. |
 
 **The hospital site is the poignant case.** It shows the design at its best, because one coordinate holds two of David's lines a decade apart: born in the building, then crossing its ruins. The place's states, from what is published:
 
@@ -235,3 +235,40 @@ So the investigator is built to work only on its holder. It starts from the down
 ### A first version
 
 Intake, a folder of downloads and your CV produce a draft timeline for you to correct. That is days of work, not months. More connectors and the public records come next. Interlocks with other people come last, and only with their consent.
+
+## Started, at David's word
+
+David, the same morning (lightly condensed):
+
+> I'm not sure I'm particularly interested in the privacy issue. It's my life, and I would like to record it, and I'd like to have it publicly represented, with the objective of being transparent. Naming other people is part of my experience. … It is not about privacy. It's about sharing transparently, and for different people to have their transparent perspectives, and then some kind of comparison between them. … We can use the coloured stigmergy to enable a form of privacy, and people who wish to disclose themselves, as I do, can enter the colour stigmergy that I am offering. … Do we need to write a proposal, or can you start working on it now?
+
+**Decision 4 is settled by that answer.** The default is open, other people are named as part of the teller's own experience, and a colour serves any circle that would rather disclose among itself. **Decisions 1 to 3** are taken on weft's leans, and are his to change:
+
+- a memory is said at the address it tells of;
+- it goes in the `now` mirror, read backwards;
+- a place that is gone gets its history in its own line on the map.
+
+**Built on the beach, 6 November:**
+
+- **`function:earth` 8, THEN.** The law, so that any person's LLM can do the same:
+  - 8.1 the line;
+  - 8.2 the place;
+  - 8.3 other people and openness;
+  - 8.4 HERE, THEN.
+- **`spatial:earth`.** Dundee at `31174000000`, and its Maryfield ward at `31174010000`, with the neighbourhood rung left undecided for David's word. Beneath the ward:
+  - Maryfield Terrace, `31174010100`;
+  - Clepington Primary School, `31174010200`;
+  - Morgan Academy, `31174010300`;
+  - the site of Maryfield Hospital, `31174010400`.
+
+  The registers used were postcodes.io (the wards), OpenStreetMap's Nominatim (the coordinates) and the 2022 census (the populations).
+- **`geo:earth`.** Anchors at the same addresses. The hospital site is anchored at the sports centre beside it, at a coarse zoom.
+- **A slip, and its repair.** The first write passed the short address `31174`. The beach left-pads that to `00000031174`, so a copy of Dundee landed under the map's root chain. It was repaired by one whole-block write of the map as it had stood plus Dundee, and verified identical. The lesson is the one sundial 3.2 states, and the beach's own note says it: write full width.
+
+**Not written, because it is his hand:** his life lines in `now:happyseaurchin`, and his house in `spatial:happyseaurchin`. The standing grant of 2026-08-12 keeps his now and his mirrors to his own hand. The lines are drafted and wait on his word.
+
+**Next:**
+
+- his lines, at his word;
+- his answers to the investigator's first questions: where the campsite was, which town in Portugal, what his bit of Dundee was called, where Clepington Primary stood in the 1970s, his birthday if he wants it, where he lived in Edinburgh;
+- the investigator itself, on his own machine.
