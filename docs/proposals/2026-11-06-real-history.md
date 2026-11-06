@@ -86,7 +86,7 @@ The clock addresses are full width. The earth addresses that exist are marked; t
 
 | told at (clock) | resolution | place (earth) | the line |
 |---|---|---|---|
-| `1969000000` (a day, if he gives his birthday) | the year | the site of Maryfield Hospital, `31174010400` (minted) | Born at Maryfield Hospital. |
+| `1969000000`, and the day `1969423400` (18 November) | the year, the day | the site of Maryfield Hospital, `31174011300` (minted) | Born at Maryfield Hospital. |
 | a season of 1970, e.g. `1970100000`, January to March (on its own, `1970000000` reads as the decade; sundial 3.4) | season | Portugal `31440000000` → *(the town, his word)* | To Portugal. |
 | `1975000000` | year | the UK `31100000000` → *(the campsite: where, his word)* | Back to the UK; a campsite for a few years. |
 | `1970000000`, "about 1977–78" | decade | Dundee → *(ward)* → Maryfield Terrace → *(the house, his own mirror; the number perhaps sealed)* | Moved to Maryfield Terrace. |
@@ -255,20 +255,33 @@ David, the same morning (lightly condensed):
   - 8.2 the place;
   - 8.3 other people and openness;
   - 8.4 HERE, THEN.
-- **`spatial:earth`.** Dundee at `31174000000`, and its Maryfield ward at `31174010000`, with the neighbourhood rung left undecided for David's word. Beneath the ward:
-  - Maryfield Terrace, `31174010100`;
-  - Clepington Primary School, `31174010200`;
-  - Morgan Academy, `31174010300`;
-  - the site of Maryfield Hospital, `31174010400`.
+- **`spatial:earth`.** Dundee at `31174000000`, and its Maryfield ward at `31174010000`. Beneath the ward are two neighbourhoods, decided by David's word ("Stobswell, or Maryfield") and the postcodes' own areas:
+  - **Maryfield**, `31174011000`:
+    - Maryfield Terrace, `31174011100` (DD4 7AE);
+    - Morgan Academy, `31174011200` (DD4 7AX);
+    - the site of Maryfield Hospital, `31174011300` (DD4 7AA). This is the ground between Clepington Primary and Mains Loan, now under the sports centre's outdoor pitches, on David's word.
+  - **Stobswell**, `31174012000`:
+    - Clepington Primary School, `31174012100` (DD4 6TQ).
 
-  The registers used were postcodes.io (the wards), OpenStreetMap's Nominatim (the coordinates) and the 2022 census (the populations).
-- **`geo:earth`.** Anchors at the same addresses. The hospital site is anchored at the sports centre beside it, at a coarse zoom.
+  So the walk across the ruins went from Maryfield into Stobswell. The registers used were postcodes.io (wards and areas), OpenStreetMap's Nominatim (the coordinates) and the 2022 census (the populations). For the first hour the four places stood under an undecided neighbourhood rung (`31174010x00`). They moved when the ground was decided, before anything pointed at them.
+- **`geo:earth`.** Anchors at the same addresses. The hospital site is anchored at the sports centre's postcode, at a coarse zoom.
 - **A slip, and its repair.** The first write passed the short address `31174`. The beach left-pads that to `00000031174`, so a copy of Dundee landed under the map's root chain. It was repaired by one whole-block write of the map as it had stood plus Dundee, and verified identical. The lesson is the one sundial 3.2 states, and the beach's own note says it: write full width.
 
-**Not written, because it is his hand:** his life lines in `now:happyseaurchin`, and his house in `spatial:happyseaurchin`. The standing grant of 2026-08-12 keeps his now and his mirrors to his own hand. The lines are drafted and wait on his word.
+**Not written, because it is his hand:** his life lines in `now:happyseaurchin`, and his house in `spatial:happyseaurchin`. The standing grant of 2026-08-12 keeps his now and his mirrors to his own hand.
+
+**His answers, the same morning:**
+
+- born on 18 November 1969, at Maryfield Hospital (clock `1969423400`);
+- Lisbon, from about 1970 to 1975;
+- a campsite from 1975 to 1976 or 1977, its name forgotten;
+- 28 Maryfield Terrace, DD4 7AE;
+- "Stobswell, or Maryfield";
+- the hospital stood where the sports centre's outdoor pitches are, between Clepington Primary and Mains Loan.
+
+His ten lines and his house are drafted from these and left in his parlour, `pool:happyseaurchin` 179, for his hand or for his word to weft.
 
 **Next:**
 
 - his lines, at his word;
-- his answers to the investigator's first questions: where the campsite was, which town in Portugal, what his bit of Dundee was called, where Clepington Primary stood in the 1970s, his birthday if he wants it, where he lived in Edinburgh;
+- the Edinburgh addresses, when he has them;
 - the investigator itself, on his own machine.
