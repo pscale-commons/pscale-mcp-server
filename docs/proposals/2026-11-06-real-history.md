@@ -158,3 +158,80 @@ Where they stood in the 1970s is for David or a local register to say.
 3. **Place states.** Behind the place's zero on the map, or as holds on `identity:earth`?
 4. **Privacy defaults.** What is public by default (city and decade?), and what is sealed by default (house, day, other people)?
 5. **The pilot.** Go, not yet, or change.
+
+## Follow-up: the historical investigator
+
+David, the same morning (lightly condensed):
+
+> How much detail is actually online? A CV doesn't give the dates of where I've lived, but there are records somewhere. If I give various websites access — Facebook doesn't go far back for me, but a person who used it as a teenager would have nearly everything — and the Wayback Machine holds old blog posts, how easy would it be to build a crawler that pulls everything about me and builds up a story of my life? Then I dictate my experience of different periods. It would ask me a few questions; I'd give it addresses and access. For an older person, life online only begins after the dot-com boom, around 2000. How feasible is the historical investigator?
+
+### Verdict
+
+**Feasible, and the reading is the easy part.** A model can now pull dated, placed events out of almost any document. What decides whether the investigator works is where it starts.
+
+**It should not be a crawler that searches the open web for a name.** There are three reasons:
+
+1. **Most of a life's data sits behind logins.** Scraping it breaks the sites' terms and gets blocked. The same data comes whole, and legally, through each service's own download, which UK GDPR gives every person the right to.
+2. **The open web confuses people who share a name.** A search for "happyseaurchin" with "David Pinto" returned no page linking the two. Its only lead was a GitHub profile under `davpinto`, with R machine-learning projects: probably somebody else. A name search yields candidates to confirm, never facts.
+3. **A tool that takes any name and gathers everything about it is a people-search engine.** Pointed at someone else, it is a stalking tool.
+
+So the investigator is built to work only on its holder. It starts from the downloads and accounts that only the person can reach. It never takes a stranger's name, and everything it finds stays private until the person approves it.
+
+### What each source yields: where you lived, and when
+
+- **Your own downloads, available today.**
+  - **Facebook and Instagram:** places lived, work and education with years, life events, check-ins, and dated posts and photos. For someone who joined as a teenager, this is close to a complete life from then on.
+  - **Google:** Gmail (receipts, bookings, changes of address, since 2004 for early users) and Photos. The location Timeline now lives on the phone rather than in the account, so whether it reaches back depends on what was kept.
+  - **LinkedIn:** positions and education, with dates.
+  - **Amazon:** every order with its delivery address and date. This is one of the best "where did I live when" sources from about 2000.
+  - **Others:** X, Apple, Strava, Uber and booking sites.
+  - **Your photo files:** their dates, and their GPS from phones (from about 2009).
+- **UK records you can ask for** (subject access requests, free by default, answered within a month):
+  - HMRC and DWP: which years you worked.
+  - DVLA: your driver record.
+  - The credit reference agencies: recent addresses.
+  - The University of Edinburgh: your student record.
+  - National Records of Scotland: your own birth extract, which names Maryfield.
+  - Banks and the NHS.
+- **Public records.**
+  - Companies House: directorships, with dates and addresses (a free API).
+  - Domain registrations: happyseaurchin.com was registered on 15 October 2010, and crumful.com on 9 September 2025 (the registry's RDAP record, read from this seat).
+  - The Wayback Machine, for your own sites: unreachable from this cloud seat, but it works from your own machine.
+  - The Usenet archive, if you posted from Edinburgh in 1988–92.
+  - Newspapers (birth notices, local news), and school and university publications.
+- **Records of your places, for the years before the internet.** These don't record you, but they record where you were:
+  - historic Ordnance Survey maps at the National Library of Scotland (the hospital on the map, then gone);
+  - aerial photograph collections (Britain from Above; Historic Environment Scotland's Canmore and the National Collection of Aerial Photography);
+  - Dundee City Archives.
+
+  They give each place its states (the hospital, the ruins, what stands now), and your memories attach to those.
+
+### The yield by era, for you and for a younger person
+
+- **Before about 2000:** almost nothing about you online. Here the investigator frames the places and periods from public records, then interviews you, and your dictation carries it.
+- **2000–2010:** email, domains, early web pages, Amazon orders, and dated photos.
+- **2010 on:** dense. Social downloads, phone photos with GPS, location history.
+- **Someone who joined Facebook at fourteen:** near-daily from then on. Their problem is the opposite of yours: too much. The investigator's job becomes summarising at the right level, a year in one line with the detail beneath, which is exactly what the rungs do.
+
+### How it works
+
+1. **Intake.** A few questions: the names you have used, date and place of birth, handles, email addresses, domains, schools, employers, and the rough moves.
+2. **You hand it what you have.** A folder of downloads, accounts you sign into yourself, and your CV.
+3. **It reads each source and extracts events.** Each event carries its time (and how precise it is), its place, what happened, its source, and how sure it is. For example: "15 October 2010 · registered happyseaurchin.com · domain registry · certain."
+4. **It merges them into a timeline.** It flags conflicts and shows the gaps ("nothing between 1992 and 1999 — where were you?").
+5. **It interviews you.** The gaps come first, then the periods you want to tell. You dictate.
+6. **You approve.** Only approved lines go into your mirror, private by default, at their time and place addresses (the shape above), each carrying its source.
+
+**It runs on your own machine,** as a Claude Code session or a small local app. The data stays local except for what the model reads. This fits the beach's scale principle: each person runs their own investigator, and no central store of everyone's lives exists. Matthew's pocket beach (a phone with its own region of blocks and a model on the chip) is the natural home for the private evidence.
+
+### The hard parts
+
+- **Identity:** is this David Pinto you? Start from your own sources, and confirm every web hit.
+- **Dating:** with honest precision. A coarser rung beats a guess.
+- **Places:** turning a place name into an earth address. Geocode it, then let the keeper's pass mint the rungs.
+- **Volume:** a large email archive is tens of thousands of messages. Filter for moves, jobs, travel and milestones before the model reads anything.
+- **Other people:** their messages and photos inside your downloads stay private, and never reach a public line.
+
+### A first version
+
+Intake, a folder of downloads and your CV produce a draft timeline for you to correct. That is days of work, not months. More connectors and the public records come next. Interlocks with other people come last, and only with their consent.
