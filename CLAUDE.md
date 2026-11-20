@@ -10,4 +10,4 @@ A session working here as weft takes weft's door first, as `orientation:weft` 7.
 
 ## The design log
 
-The text this file held until 20 November 2026, the server's design log from 10 to 27 April 2026 (its tools, storage and sessions, the evolution model, the GRIT engine, Thornkeep and the xstream-play bridge), stands verbatim at `docs/design-log-to-2026-04-27.md`. Every session that carried this repository loaded all 144,624 characters of it before its first call (door-health.1; `health-check:weft` 9 on the beach); read it when the old server's history is the work.
+The text this file held until 20 November 2026, the server's design log from 10 to 27 April 2026 (its tools, storage and sessions, the evolution model, the GRIT engine, Thornkeep and the xstream-play bridge), stands verbatim at `docs/design-log-to-2026-04-27.md`. Every session that carried this repository loaded all 144,624 characters of it before its first call (door-health.1; `health-check:weft` 1.11111 on the beach); read it when the old server's history is the work.
